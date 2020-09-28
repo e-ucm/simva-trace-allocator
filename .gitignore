@@ -1,0 +1,5 @@
+/node_modules/
+/tmp/*
+
+# Config files
+config-test.js
