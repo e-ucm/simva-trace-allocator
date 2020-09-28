@@ -30,9 +30,14 @@ var auth = function(){
 				console.log('Cant login');
 				reject(error);
 			}else{
-				var b = JSON.parse(response.body);
-				headers.Authorization = 'Bearer ' + b.token;
-				resolve();
+				try{
+					var b = JSON.parse(response.body);
+					headers.Authorization = 'Bearer ' + b.token;
+					resolve();
+				}catch(e){
+					console.log('Cant login.');
+					reject(e);
+				}
 			}
 		});
 	})
@@ -154,7 +159,14 @@ var proccessTraces = async function(){
 	processing = true;
 	let state = await getState();
 
-	await auth();
+	try{
+		await auth();	
+	}catch(e){
+		console.log("Unable to auth");
+		processing = false;
+		return e;
+	}
+	
 	let activities = await getActivities({ type: ['gameplay', 'miniokafka', 'rageminio'] });
 
 	for (var i = activities.length - 1; i >= 0; i--) {
@@ -228,6 +240,9 @@ var proccessTraces = async function(){
 	processing = false;
 	console.log('#####################################################');
 }
+
+console.log('#### CURRENT CONFIG ####')
+console.log(JSON.stringify(config, null, 2));
 
 setInterval(function(){
 	if(!processing){
