@@ -5,7 +5,7 @@ config.refreshInterval = process.env.REFRESH_INTERVAL || 5000
 
 config.minio = {}
 config.minio.host = process.env.MINIO_HOST || 'minio.simva.example.org'
-config.minio.useSSL = process.env.MINIO_SSL || true
+config.minio.useSSL = (process.env.MINIO_SSL === "true") || true
 config.minio.port = process.env.MINIO_PORT || (config.minio.useSSL ? 443 : 80)
 config.minio.accessKey = process.env.MINIO_ACCESS_KEY || 'root'
 config.minio.secretKey = process.env.MINIO_SECRET_KEY || 'password'
