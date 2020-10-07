@@ -93,9 +93,13 @@ var getTraces = function(activityId){
 function streamToString (stream) {
 	const chunks = []
 	return new Promise((resolve, reject) => {
-		stream.on('data', chunk => chunks.push(chunk))
-		stream.on('error', reject)
-		stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+		try{
+			stream.on('data', chunk => chunks.push(chunk))
+			stream.on('error', reject)
+			stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+		}catch(e){
+			reject(e);
+		}
 	})
 }
 
@@ -205,10 +209,16 @@ var proccessTraces = async function(){
 
 			if(addTraceTo.length > 0){
 				processedTraces++;
-				let content = (await getFile(traces[t])).replace('\n','');
-				for (var j = 0; j < addTraceTo.length; j++) {
-					tracesToAdd[addTraceTo[j]] += (content + ',');
-					state.states[activities[i]._id][addTraceTo[j]] = traces[t];
+				try{
+					let content = (await getFile(traces[t])).replace('\n','');
+					for (var j = 0; j < addTraceTo.length; j++) {
+						tracesToAdd[addTraceTo[j]] += (content + ',');
+						state.states[activities[i]._id][addTraceTo[j]] = traces[t];
+					}
+				}catch(e){
+					console.log("Error processing traces");
+					processing = false;
+					return e;
 				}
 			}
 		}
@@ -229,7 +239,13 @@ var proccessTraces = async function(){
 
 			let traces = '[' + tracesToAdd[username].slice(0, -1) + ']';
 
-			await setFile('users/' + username + '/' + activities[i]._id + '/' + n + '.json', traces);
+			try{
+				await setFile('users/' + username + '/' + activities[i]._id + '/' + n + '.json', traces);
+			}catch(e){
+				console.log("Error saving trace");
+				processing = false;
+				return e;
+			}
 			await setState(state);
 		}
 	}
