@@ -87,7 +87,7 @@ var listFiles = function(folder){
 }
 
 var getTraces = function(activityId){
-	return listFiles('/topics/traces/_id=' + activityId + '/');
+	return listFiles('/' + config.minio.topics_dir + '/traces/_id=' + activityId + '/');
 }
 
 function streamToString (stream) {
