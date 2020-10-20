@@ -189,12 +189,16 @@ var proccessTraces = async function(){
 			tracesToAdd[activities[i].owners[j]] = '';
 		}
 
+		// The list of trace files is retrieved from the server.
+
 		let traces = [];
 		try{
 			traces = await getTraces(activities[i]._id);
 		}catch(e){
 			console.log(e);
 		}
+
+		// The list of pending traces to add to each owner is generated
 
 		let processedTraces = 0;
 		for (var t = 0; t < traces.length && processedTraces < config.batchSize; t++) {
@@ -228,21 +232,32 @@ var proccessTraces = async function(){
 				continue;
 			}
 
-			let n = 0;
+			/*let n = 0;
 
 			try{
-				let files = await listFiles('/users/' + username + '/' + activities[i]._id + '/');
+				let files = await listFiles('/' + config.minio.users_dir + '/' + username + '/' + activities[i]._id + '/');
 				n = parseInt(files[files.length-1].split('/').last().split('.')[0]) + 1;
 			}catch(e){
 				console.log('Unable to found last traces file');
 			}
 
-			let traces = '[' + tracesToAdd[username].slice(0, -1) + ']';
+			let traces = '[' + tracesToAdd[username].slice(0, -1) + ']';*/
+
+			let traces = [];
+			let tracesfile = config.minio.users_dir + '/' + username + '/' + activities[i]._id + '/' + config.minio.traces_file;
+			try{
+				let rawtraces = await getFile(tracesfile, traces);
+				traces = rawtraces.slice(0, -1) + ',' + tracesToAdd[username].slice(0, -1) + ']';
+			}catch(e){
+				traces = '[' + tracesToAdd[username].slice(0, -1) + ']';
+			}
 
 			try{
-				await setFile('users/' + username + '/' + activities[i]._id + '/' + n + '.json', traces);
+				await setFile(tracesfile, traces);
 			}catch(e){
-				console.log("Error saving trace");
+				console.log(traces);
+				console.log("Error saving traces file: " + tracesfile);
+				console.log(e);
 				processing = false;
 				return e;
 			}

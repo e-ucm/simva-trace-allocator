@@ -1,16 +1,18 @@
 let config = {}
 
-config.batchSize = process.env.BATCH_SIZE || 100
+config.batchSize = process.env.BATCH_SIZE || 500
 config.refreshInterval = process.env.REFRESH_INTERVAL || 5000
 
 config.minio = {}
 config.minio.host = process.env.MINIO_HOST || 'minio.simva.e-ucm.es'
 config.minio.useSSL = (process.env.MINIO_SSL === "true") || true
 config.minio.port = process.env.MINIO_PORT || (config.minio.useSSL ? 443 : 80)
-config.minio.accessKey = process.env.MINIO_ACCESS_KEY || 'root'
-config.minio.secretKey = process.env.MINIO_SECRET_KEY || 'password'
+config.minio.accessKey = process.env.MINIO_ACCESS_KEY || 'mcs'
+config.minio.secretKey = process.env.MINIO_SECRET_KEY || 'laeTh2oohi0nieP'
 config.minio.bucket = process.env.MINIO_BUCKET || 'traces'
 config.minio.topics_dir = process.env.MINIO_TOPICS_DIR || 'kafka-topics'
+config.minio.users_dir = process.env.MINIO_USERS_DIR || 'users'
+config.minio.traces_file = process.env.MINIO_TRACES_FILE || 'traces.json'
 
 config.simva = {}
 config.simva.host = process.env.SIMVA_HOST || 'simva-api.simva.e-ucm.es'
