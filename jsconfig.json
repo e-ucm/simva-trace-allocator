@@ -1,0 +1,14 @@
+{
+    "compilerOptions": {
+        "module": "Node16",
+        "target":"ES2022",
+        "lib" : [ "ES2022" ],
+        "checkJs": true,
+        "moduleResolution": "node16",
+        "typeRoots" : ["./node_modules/@types", "./types"],
+        "paths": {
+            "/types/*": ["./types/*"]
+        }
+    },
+    "include": ["src/**/*.js", "__tests__/**/*.js", "types/**/*.js", "types/**/*.d.ts"]
+}

@@ -1,12 +1,24 @@
 {
   "name": "trace-allocator",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "start": "node ./src/index.js"
   },
+  "engines": {
+    "node": ">=20 <21"
+  },
   "dependencies": {
-    "minio": "*",
-    "request": "*"
+    "dotenv": "^16.3.1",
+    "minio": "7.0.16",
+    "pino": "^8.16.2",
+    "tinyduration": "^3.3.0",
+    "wretch": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.9.0",
+    "@types/pino": "^7.0.5",
+    "pino-pretty": "^10.2.3"
   }
 }
