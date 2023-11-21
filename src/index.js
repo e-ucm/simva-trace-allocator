@@ -40,7 +40,11 @@ process.on('SIGINT', () => {
 
 process.on('SIGUSR2',function(){
     logger.info("SIGUSR2 signal received");
+    if (!compactor.status.processing) {
+        setImmediate(run);
+        logger.info(`Force run`);
+    }
     const status = compactor.status;
     const elapsedTime = compactor.elapsedTime;
-    console.error(`Status: ${status.current} / ${status.total}, elapsedTime: ${elapsedTime}`);
+    logger.info(`Status: ${status.current} / ${status.total}, elapsedTime: ${elapsedTime}`);
 });
