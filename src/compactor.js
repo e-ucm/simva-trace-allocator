@@ -4,6 +4,7 @@ import { MinioClient } from './minio.js';
 import { SimvaClient } from './simva.js';
 import { getState } from './state.js';
 import { createHash } from 'node:crypto';
+import { diffArray } from './utils.js';
 
 /** @typedef {import('./config.js').CompactorOptions} CompactorOptions */
 /** @typedef {import('./simva.js').Activity} Activity */
@@ -118,7 +119,7 @@ export class Compactor {
      * @param {ActivityCompactionState} activityState 
      */
     async #updateOwners(activity, activityState) {
-        const diffOwners = diff(activityState.owners, activity.owners.sort());
+        const diffOwners = diffArray(activityState.owners, activity.owners.sort());
         // Remove files
         if (diffOwners.removed.length > 0) {
             logger.info('Removing owners [%s] for activity: %s', diffOwners.removed.join(', '), activity._id);
@@ -159,7 +160,7 @@ export class Compactor {
 
         // compute which files need to be appended
         const activityFiles = await activityState.files();
-        const { added: filesToAdd } = diff(activityFiles, traceFiles);
+        const { added: filesToAdd } = diffArray(activityFiles, traceFiles);
         const nowDate = now();
         const elapsedTime = duration(activityState.lastUpdate, nowDate);
         if (filesToAdd.length < this.#opts.batchSize && elapsedTime < this.#opts.maxDelay) {
@@ -197,96 +198,4 @@ export class Compactor {
  */
 function createSha1() {
 	return createHash('sha1');
-}
-
-/**
- * @typedef {object} ArrayDiff
- * @property {string[]} added
- * @property {string[]} removed
- */
-
-/**
- * 
- * @param {string[]} a Ordered string array. 
- * @param {string[]} b Ordered string array.
- * 
- * @returns {ArrayDiff}
- */
-function diff(a, b) {
-	/** @type {ArrayDiff} */
-	const result = {
-		added: [],
-		removed: []
-	};
-	const minLength = Math.min(a.length, b.length);
-	let idxA, idxB;
-	for(idxA = 0, idxB=0; idxA < minLength;) {
-		const aValue = a[idxA];
-		const bValue = b[idxB];
-		if (aValue === bValue) {
-			idxA++;
-			idxB++;
-		} else if (aValue < bValue){
-            result.removed.push(aValue);
-            idxA++;
-		} else {
-            result.added.push(bValue);
-            idxB++;
-        }
-	}
-	if (idxA < a.length) {
-		for(;idxA < a.length; idxA++) {
-            const aValue = a[idxA];
-			result.removed.push(aValue);
-		}
-	}
-    if (idxB < b.length) {
-		for(;idxB < b.length; idxB++) {
-            const bValue = b[idxB];
-			result.added.push(bValue);
-		}
-    }
-	return result;
-}
-
-/**
- * @template T
- * @param {T[]} array 
- * @param {T} value
- * @param {(a:T, b:T) => number} [comparator]
- * 
- * @returns
- */
-function binarySearch(array, value, comparator) {
-    if (array.length === 0) return -1;
-
-    comparator = comparator || ((a, b) => Number(a) - Number(b));
-    return recursiveBinarySearch(array, value, 0, array.length, comparator);
-}
-
-/**
- * @template T
- * @param {T[]} array 
- * @param {T} value
- * @param {number} start
- * @param {number} end
- * @param {(a:T, b:T) => number} [comparator]
- * 
- * @returns
- */
-function recursiveBinarySearch(array, value, start, end, comparator) {
-      
-    // Base Condition
-    if (start > end) return -1;
-  
-    // Find the middle index
-    const mid = Math.floor((start + end)/2);
-  
-    // Compare mid with given key x
-    const comparation = comparator(array[mid], value);
-    
-    if (comparation === 0) return mid;     
-    if (comparation > 0) return recursiveBinarySearch(array, value, start, mid-1, comparator);
-    
-    return recursiveBinarySearch(array, value, mid+1, end, comparator);
 }
