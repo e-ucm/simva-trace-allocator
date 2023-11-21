@@ -8,6 +8,7 @@ import * as inspector from 'inspector';
  * @property {number} refreshInterval
  * @property {string} localStatePath
  * @property {string} remoteStatePath
+ * @property {boolean} removeDryRun
  * @property {import('./minio.js').MinioOpts} minio
  * @property {import('./simva.js').SimvaOpts} simva
  */

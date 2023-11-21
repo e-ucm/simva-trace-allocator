@@ -125,9 +125,21 @@ export class Compactor {
         const diffOwners = diffArray(activityState.owners, activity.owners.sort());
         // Remove files
         if (diffOwners.removed.length > 0) {
-            logger.info('Removing owners [%s] for activity: %s', diffOwners.removed.join(', '), activity._id);
-            for(const removedOwner of diffOwners.removed) {
-                await this.#minio.removeCompactedFileForUser(activity._id, removedOwner);
+            const usersDir = this.#opts.minio.users_dir;
+            const tracesFilename = this.#opts.minio.traces_file;
+            if (this.#opts.removeDryRun) {
+                logger.info('DRY RUN - Removing owners [%s] for activity: %s', diffOwners.removed.join(', '), activity._id);
+                for(const removedOwner of diffOwners.removed) {
+                    const remotePath = `${usersDir}/${removedOwner}/${activityState.activityId}/${tracesFilename}`;
+                    logger.debug('DRY RUN - Removed remote file: %s', remotePath);
+                }   
+            } else {
+                logger.info('Removing owners [%s] for activity: %s', diffOwners.removed.join(', '), activity._id);
+                for(const removedOwner of diffOwners.removed) {
+                    const remotePath = `${usersDir}/${removedOwner}/${activityState.activityId}/${tracesFilename}`;
+                    await this.#minio.removeRemoteFile(remotePath);
+                    logger.debug('Removed remote file: %s', remotePath);
+                }    
             }
         }
         // Update State
