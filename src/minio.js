@@ -14,6 +14,23 @@ import { logger } from './logger.js';
  * @property {string} traces_file
  */
 
+/**
+ * @typedef ListEntry
+ * @property {string} name name of the object.
+ * @property {string} prefix name of the object prefix.
+ * @property {number} size size of the object.
+ * @property {string} etag etag of the object.
+ * @property {string} versionId versionId of the object.
+ * @property {boolean} isDeleteMarker true if it is a delete marker.
+ * @property {Date} lastModified modified time stamp.
+ */
+
+/**
+ * @typedef FPutResult
+ * @property {string} etag etag of the object.
+ * @property {string} versionId versionId of the object.
+ */
+
 export class MinioClient {
 
     /**
@@ -21,6 +38,8 @@ export class MinioClient {
      */
     constructor(opts) {
         this.#opts = opts;
+        // XXX used version of minio sdk do not have proper types
+        // @ts-ignore
         this.#minio = new Client({
             endPoint: opts.host,
             port: opts.port,
@@ -38,10 +57,13 @@ export class MinioClient {
     /**
      * @param {string} folder
      * 
-     * @returns {Promise<unknown[]>}
+     * @returns {Promise<ListEntry[]>}
      */
     async listFiles(folder){
+        // XXX used version of minio sdk do not have proper types
+        // @ts-ignore
         let objectsStream = this.#minio.listObjects(this.#opts.bucket, folder, false);
+        /** @type {ListEntry[]} */
         const files = [];
         for await(const chunk of objectsStream) {
             files.push(chunk);
@@ -67,31 +89,30 @@ export class MinioClient {
      * 
      * @param {string} remotePath 
      * @param {string} localPath 
-     * @returns
+     * @returns {Promise<void>}
      */
     async copyFromRemoteFile(remotePath, localPath){
-        return await this.#minio.fGetObject(this.#opts.bucket, remotePath, localPath);
+        return this.#minio.fGetObject(this.#opts.bucket, remotePath, localPath);
     }
 
     /**
      * 
      * @param {string} remotePath 
      * @param {string} localPath
-     * @returns 
+     * @returns {Promise<FPutResult>}
      */
 	async copyToRemoteFile(localPath, remotePath) {
-        await this.#minio.fPutObject(this.#opts.bucket, remotePath, localPath);
+        return this.#minio.fPutObject(this.#opts.bucket, remotePath, localPath);
 	}
 
     /**
      * 
      * @param {string} file 
      * @param {string} content 
-     * @returns 
+     * @returns {Promise<FPutResult>}
      */
     async setFile(file, content) {
-        const info = this.#minio.putObject(this.#opts.bucket, file, content);
-        return info;
+        return this.#minio.putObject(this.#opts.bucket, file, content);
     }
 
     /**
@@ -105,12 +126,11 @@ export class MinioClient {
 
     /**
      * 
-     * @param {string} activityId 
-     * @param {string} owner 
+     * @param {string} path 
+     * @returns {Promise<void>}
      */
-	async removeCompactedFileForUser(activityId, owner) {
-        const tracesfile = `${this.#opts.users_dir}/${owner}/${activityId}/${this.#opts.traces_file}`;
-        logger.debug(`Simulate removing: %s`, tracesfile);
+	async removeRemoteFile(path) {
+        return this.#minio.removeObject(this.#opts.bucket, path);
 	}
 
 }
