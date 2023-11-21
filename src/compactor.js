@@ -73,6 +73,9 @@ export class Compactor {
      * @returns {string}
      */
     get elapsedTime() {
+        if (!this.status.processing) {
+            return 'Not running compactor';
+        }
         const nowDate = now();
         const durationStr = formatDuration(duration(this.status.startTime, nowDate));
         return durationStr;
