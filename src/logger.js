@@ -1,19 +1,19 @@
 import { config } from './config.js';
-import { mkdir } from 'node:fs/promises';
 import pino from 'pino';
 import { now } from './dateUtils.js';
 
 const logsFolder = new URL('../logs', import.meta.url);
-const dirCreation = await mkdir(logsFolder, { recursive: true });
 const logFile = `${logsFolder.pathname}/${now().toISOString()}.log`;
 
+/** @type {{targets:import('pino').TransportTargetOptions[]}} */
 let transport = {
     targets: [
         {
             target: 'pino/file',
             level: (process.env.LOG_LEVEL || 'info').toLowerCase(),
             options: {
-                destination: logFile
+                destination: logFile,
+                mkdir: true
             }
         }
     ]
@@ -25,7 +25,6 @@ if (process.env.NODE_ENV !== 'production') {
                 level: (process.env.LOG_LEVEL || 'info').toLowerCase(),
                 options: {
                     translateTime: 'SYS:hh:MM:ss TT',
-                    singleLine: true,
                     ignore: 'pid,hostname'
                 }
             }
@@ -44,6 +43,7 @@ if (process.env.NODE_ENV !== 'production') {
 );   
 }
 
+/** @type {import('pino').LoggerOptions} */
 const options = {
     level: (process.env.LOG_LEVEL || 'info').toLowerCase(),
     redact: {
@@ -55,7 +55,8 @@ const options = {
         err: pino.stdSerializers.err,
         req: pino.stdSerializers.req,
         res: pino.stdSerializers.res
-    }
+    },
+    transport
 }
 
 
