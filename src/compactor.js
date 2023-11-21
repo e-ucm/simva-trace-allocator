@@ -164,7 +164,7 @@ export class Compactor {
         const elapsedTime = duration(activityState.lastUpdate, nowDate);
         if (filesToAdd.length < this.#opts.batchSize && elapsedTime < this.#opts.maxDelay) {
             const durationStr = formatDuration(elapsedTime);
-            logger.debug(`Update postponed ellapsedTime=%s, batchSize=%d for activity `, durationStr, filesToAdd.length, activity._id);
+            logger.debug(`Update postponed elapsedTime=%s, batchSize=%d for activity `, durationStr, filesToAdd.length, activity._id);
             return false;
         }
 
