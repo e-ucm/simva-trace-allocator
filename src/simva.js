@@ -1,5 +1,4 @@
 import wretch from "wretch";
-import QueryStringAddon from "wretch/addons/queryString";
 
 /**
  * @typedef SimvaOpts
@@ -27,11 +26,7 @@ function assertActivity(maybeActivity, checkTypes = false) {
 	if (! ('owners' in maybeActivity) || ! Array.isArray(maybeActivity.owners)) throw new Error('Not an Activity');
 }
 
-const DEFAULT_HEADERS = {
-	'Content-Type': 'application/json',
-	'Accept': 'application/json'
-};
-
+const APPLICATION_JSON_MIME_TYPE = 'application/json';
 
 export class SimvaClient {
     /**
@@ -40,7 +35,10 @@ export class SimvaClient {
     constructor(opts) {
 		this.#opts = opts;
         this.#endpoint = `${opts.protocol}://${opts.host}${opts.port !== undefined ? `:${opts.port}` : ''}`;
-		this.#api = wretch(this.#endpoint).errorType("json").resolve(r => r.json());
+		this.#api = wretch(this.#endpoint)
+			.content(APPLICATION_JSON_MIME_TYPE)
+			.accept(APPLICATION_JSON_MIME_TYPE);
+		this.#bearer = '';
     }
 
     /** @type {SimvaOpts} */
@@ -54,14 +52,13 @@ export class SimvaClient {
 	/** @type {string} */
 	#bearer;
 
-
 	async #auth(){
-		if (this.#bearer !== undefined) return;
-		const payload = { username: this.#opts.username, password: this.#opts.password };
-		
-		const result = /** @type {{token:string}}*/(await this.#api.headers(DEFAULT_HEADERS).url('/users/login').post(payload));
-		this.#bearer = result.token;
-	};
+		const payload = { username: this.#opts.username, password: this.#opts.password };		
+		/** @type {{token:string}}*/
+		const result = await this.#api.url('/users/login').post(payload).json();
+		this.#bearer = `Bearer ${result.token}`;
+		return this.#bearer;
+	}
 
 	/**
 	 * 
@@ -69,10 +66,23 @@ export class SimvaClient {
 	 * @returns {Promise<Activity[]>}
 	 */
 	async getActivities(query){
-		await this.#auth();
-		const activitiesAPI = this.#api.headers(DEFAULT_HEADERS).auth(`Bearer ${this.#bearer}`).addon(QueryStringAddon).url('/activities');
-		const searchParam = JSON.stringify(query);
-		const activities = /** @type {unknown[]} */ (await activitiesAPI.query({searchString: searchParam}).get());
+		const searchParam = JSON.stringify(query);;
+		const queryParams = new URLSearchParams();
+		queryParams.append('searchString', searchParam);
+
+		const activitiesAPI = this.#api.url(`/activities?${queryParams.toString()}`)
+		.auth(this.#bearer);
+		/** @type {Activity[]} */
+		const activities = await activitiesAPI.get()
+		.unauthorized(async (error, req) => {
+			// Renew credentials
+			const token = await this.#auth();
+			// Replay the original request with new credentials
+			return req.auth(token).get().unauthorized((nestedError) => {
+			  	throw nestedError;
+			}).json();
+		})
+		.json();
 		for(const activity of activities){
 			assertActivity(activity);
 		}
