@@ -133,6 +133,15 @@ export class MinioClient {
         return this.#minio.removeObject(this.#opts.bucket, path);
 	}
 
+    /**
+     * 
+     * @param {string[]} paths 
+     * @returns {Promise<void>}
+     */
+	async removeRemoteFiles(paths) {
+        return this.#minio.removeObjects(this.#opts.bucket, paths);
+	}
+
 }
 
 

@@ -9,6 +9,7 @@ import * as inspector from 'inspector';
  * @property {string} localStatePath
  * @property {string} remoteStatePath
  * @property {boolean} removeDryRun
+ * @property {number} gcInterval
  * @property {import('./minio.js').MinioOpts} minio
  * @property {import('./simva.js').SimvaOpts} simva
  */
@@ -20,6 +21,8 @@ export const config = {
     refreshInterval: process.env.REFRESH_INTERVAL !== undefined ? parseInt(process.env.REFRESH_INTERVAL) : 10*60*1000,
     localStatePath: process.env.LOCAL_STATE || new URL('../state', import.meta.url).pathname,
     remoteStatePath: process.env.REMOTE_STATE || 'state',
+    removeDryRun: process.env.REMOVE_DRY_RUN !== undefined ? (process.env.REMOVE_DRY_RUN.toLocaleLowerCase() === 'false' ? false : true) : true,
+    gcInterval: process.env.GC_INTERVAL !== undefined ? parseInt(process.env.GC_INTERVAL) : 10*24*60*60*1000,
     minio: {
         host: process.env.MINIO_HOST || 'minio.simva.example.org',
         useSSL: process.env.MINIO_SSL !== undefined ? (process.env.MINIO_SSL.toLocaleLowerCase() === 'false' ? false : true) : false,
@@ -29,7 +32,7 @@ export const config = {
         bucket: process.env.MINIO_BUCKET || 'traces',
         topics_dir: process.env.MINIO_TOPICS_DIR || 'kafka-topics',
         users_dir: process.env.MINIO_USERS_DIR || 'users',
-        traces_file: process.env.MINIO_TRACES_FILE || 'traces_v2.json'
+        traces_file: process.env.MINIO_TRACES_FILE || 'traces_v2.json',
     },
     simva: {
         host: process.env.SIMVA_HOST || 'simva-api.simva.example.org',

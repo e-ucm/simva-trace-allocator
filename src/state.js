@@ -1,11 +1,18 @@
 import { MinioClient } from './minio.js';
 import { logger } from './logger.js';
 import { join } from 'node:path';
-import { access, constants, copyFile, mkdir, open, unlink } from 'node:fs/promises';
+import { access, constants, copyFile, mkdir, open, readdir, rm, unlink } from 'node:fs/promises';
 import { mktempPath } from './fileUtils.js';
-import { epoch, parseDate } from './dateUtils.js';
+import { duration, epoch, formatDuration, now, parseDate } from './dateUtils.js';
+import { diffArray, diffSet } from './utils.js';
 
 /** @typedef {import('./config.js').CompactorOptions} CompactorOptions */
+
+/**
+ * @typedef SerializedCompactorState
+ * @property {string} lastGC
+ * @property {Map<string, ActivityCompactionState>} states
+ */
 
 export class ActivityCompactionState {
 
@@ -64,6 +71,138 @@ export class ActivityCompactionState {
 
 		files = await this.#loadLocalFilesState();
 		return files;
+	}
+
+	async garbageCollect() {
+		const localHashesAndFiles = await this.#listLocalHashes();
+		const remoteHashesAndFiles = await this.#listRemoteHashes();
+
+		const localHashes = new Set(localHashesAndFiles.keys());
+		const remoteHashes = new Set(remoteHashesAndFiles.keys());
+		const setsDiff = diffSet(localHashes, remoteHashes);
+		if (setsDiff.added.length > 0 || setsDiff.removed.length > 0) {
+			logger.warn('Local and remote folders for activity not synced: %s', this.activityId);
+		}
+		/** @type {string[]} */
+		let localFilesToRemove = [];
+		/** @type {string[]} */
+		let remoteFilesToRemove = [];
+		localHashes.forEach((hash) => {
+			if(hash !== this.currentSha1) {
+				const localFiles = localHashesAndFiles.get(hash);
+				localFilesToRemove = localFilesToRemove.concat(localFiles);
+				const remoteFiles = remoteHashesAndFiles.get(hash);
+				remoteFilesToRemove = remoteFilesToRemove.concat(remoteFiles);
+			}
+		});
+		setsDiff.added.forEach((hash) => {
+			const remoteFiles = remoteHashesAndFiles.get(hash);
+			remoteFilesToRemove = remoteFilesToRemove.concat(remoteFiles);
+		});
+		await this.#removeRemoteFiles(remoteFilesToRemove);
+		await this.#removeLocalFiles(localFilesToRemove);
+	}
+
+	/**
+	 * 
+	 * @returns {Promise<Map<string, string[]>>}
+	 */
+	async #listLocalHashes() {
+		/** @type {Map<string, string[]>} */
+		const hashes = new Map();
+		const activityPath = join(this.#opts.localStatePath, this.activityId);
+		const files = await readdir(activityPath, { withFileTypes: true});
+		for(const file of files) {
+			if (file.isFile()) {
+				const chunks = file.name.split('-');
+				const hash = chunks[0];
+				const entry = hashes.get(hash);
+				if (entry) {
+					entry.push(file.name);
+				} else {
+					hashes.set(hash, [file.name]);
+				}
+			}
+		}
+		return hashes;
+	}
+
+	/**
+	 * 
+	 * @returns {Promise<Map<string, string[]>>}
+	 */
+	async #listRemoteHashes() {
+		/** @type {Map<string, string[]>} */
+		const hashes = new Map();
+		const remotePath = `${this.#opts.remoteStatePath}/${this.activityId}/`;
+		const files = await this.#minio.listFiles(remotePath);
+		for(const file of files) {
+			const chunks = file.name.split('-');
+			const hash = chunks[0];
+			const entry = hashes.get(hash);
+			if (entry) {
+				entry.push(file.name);
+			} else {
+				hashes.set(hash, [file.name]);
+			}
+		}
+		return hashes;
+	}
+
+	/**
+	 * 
+	 * @param {string[]} files 
+	 */
+	async #removeRemoteFiles(files) {
+		files = files.map((file) => `${this.#opts.remoteStatePath}/${this.activityId}/${file}`);
+		if (this.#opts.removeDryRun) {
+			logger.debug('DRY RUN - Removed remote files: %s', files.join(',\n'));
+		} else {
+			await this.#minio.removeRemoteFiles(files);
+			logger.debug('Removed remote file: %s', files.join(',\n'));
+		}
+	}
+
+	/**
+	 * 
+	 * @param {string[]} files 
+	 */
+	async #removeLocalFiles(files) {
+		for(const file of files) {
+			const localPath = join(this.#opts.localStatePath, this.activityId, file);
+			if (this.#opts.removeDryRun) {
+				logger.debug('DRY RUN - Removed local file: %s', localPath);
+			} else {
+				await rm(localPath);
+				logger.debug('Removed local file: %s', localPath);
+			}
+		}
+	}
+
+	async clear() {
+		await this.#clearRemoteFiles();
+		await this.#clearLocalFiles();
+	}
+
+	async #clearRemoteFiles() {
+		const fileEntries = await this.#minio.listFiles(`${this.#opts.remoteStatePath}/${this.activityId}/`);
+		const files = fileEntries.map((e) => e.name);
+		if (this.#opts.removeDryRun) {
+			logger.debug('DRY RUN - Removed all remote files for activity %s: %s', this.activityId, files.join(',\n'));
+		} else {
+			await this.#minio.removeRemoteFiles(files);
+			logger.debug('Removed all remote files for activity %s: %s', this.activityId, files.join(',\n'));
+		}
+	}
+
+	async #clearLocalFiles() {
+		const activityStatePath = join(this.#opts.localStatePath, this.activityId);
+		if (this.#opts.removeDryRun) {
+			logger.debug('DRY RUN - Removed all local files for activity %s: %s', this.activityId, activityStatePath);
+		} else {
+			await rm(activityStatePath, {force: true, recursive: true});
+			logger.debug('Removed all remote files for activity %s: %s', this.activityId,activityStatePath);
+		}
 	}
 
 	/**
@@ -163,6 +302,7 @@ export class ActivityCompactionState {
 				const content = await this.#minio.getFile(file);
 				await state.write(content);
 			}
+			// XXX rename does not work if statePath is bind mounted
 			await copyFile(tmpPath, statePath);
 			await unlink(tmpPath);
 		} catch (e) {
@@ -221,6 +361,7 @@ export class ActivityCompactionState {
 			for (const line of filesToAdd) {
 				await filesState.write(line+'\n');
 			}
+			// XXX rename does not work if statePath is bind mounted
 			await copyFile(tmpPath, filesStatePath);
 			await unlink(tmpPath);
 		} catch (e) {
@@ -255,7 +396,7 @@ export class ActivityCompactionState {
 
 export const STATE_FILENAME = 'state.json';
 	
-class CompactorState {
+export class CompactorState {
 	/**
 	 * @param {CompactorOptions} opts 
 	 * @param {MinioClient} minio 
@@ -264,6 +405,7 @@ class CompactorState {
 		this.#opts = opts;
 		this.#minio = minio;
 		this.#states = new Map();
+		this.#lastGC = null;
 	}
 	/** @type {CompactorOptions} opts */
 	#opts;
@@ -273,6 +415,9 @@ class CompactorState {
 
 	/** @type {Map<string, ActivityCompactionState>} */
 	#states;
+
+	/** @type {Date} */
+	#lastGC;
 
 	async init() {
 		let loaded = await this.#loadLocalState();
@@ -293,6 +438,23 @@ class CompactorState {
 		await activityState.init();
 		this.#states.set(activityId, activityState);
 		return activityState;
+	}
+
+	async garbageCollect() {
+		const nowDate = now();
+		const lastGC = this.#lastGC ?? epoch();
+		const elapsedTimeSinceLastGC = duration(lastGC, nowDate);
+		if (elapsedTimeSinceLastGC < this.#opts.gcInterval) {
+			return;
+		}
+
+		logger.debug('Garbage collection started');
+		for(const activity of this.#states.values()) {
+			await activity.garbageCollect();
+		}
+		const finishTime = now();
+		logger.info('Garbage collection finished, took: %s', formatDuration(duration(nowDate, finishTime)));
+		this.#lastGC = finishTime;
 	}
 
 	/**
@@ -344,11 +506,18 @@ class CompactorState {
 	 * @param {string} content 
 	 */
 	#initState(content) {
-		this.#states = /** @type {Map<string, ActivityCompactionState>} */(JSON.parse(content, withContextReviver(this.#opts, this.#minio)));
+		const serializedState = /** @type {SerializedCompactorState} */(JSON.parse(content, withContextReviver(this.#opts, this.#minio)));
+		this.#states = serializedState.states;
+		this.#lastGC = serializedState.lastGC !== null ? new Date(Date.parse(serializedState.lastGC)) : null;
 	}
 
 	async save() {
-		const content = JSON.stringify(this.#states, replacer);
+		/** @type {SerializedCompactorState} */
+		const serializedState = {
+			states: this.#states,
+			lastGC: this.#lastGC !== null ? this.#lastGC.toISOString() : null
+		}
+		const content = JSON.stringify(serializedState, replacer);
 		await this.#saveLocalState(content);
 		await this.#saveRemoteState(content);
 	}
@@ -393,6 +562,30 @@ class CompactorState {
 		return activity;
 	}
 
+	/**
+	 * 
+	 * @param {string} activityId 
+	 */
+	async remove(activityId) {
+		const activityState = this.#states.get(activityId);
+		if (!activityState) return;
+
+		if (this.#opts.removeDryRun) {
+			logger.info('DRY RUN - Known activity removed: %s', activityId);
+		} else {
+			activityState.clear();
+			this.#states.delete(activityId);
+			logger.info('Known activity removed: %s', activityId);
+		}
+	}
+
+	/**
+	 * @returns {IterableIterator<string>}
+	 */
+	get knownActivities() {
+		const it = this.#states.keys();
+		return it;
+	}
 }
 /**
  * @param {CompactorOptions} opts 

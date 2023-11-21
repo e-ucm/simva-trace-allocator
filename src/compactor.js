@@ -9,6 +9,7 @@ import { diffArray } from './utils.js';
 /** @typedef {import('./config.js').CompactorOptions} CompactorOptions */
 /** @typedef {import('./simva.js').Activity} Activity */
 /** @typedef {import('./state.js').ActivityCompactionState} ActivityCompactionState */
+/** @typedef {import('./state.js').CompactorState} CompactorState */
 
 /**
  * @typedef CompactorStatus
@@ -88,6 +89,8 @@ export class Compactor {
 
         logger.info(`Known %d activities, received %d`, state.size, activities.length);
 
+        await this.#garbageCollectActivities(state, activities);
+
         this.status.total = activities.length;
         for(let idx=0; idx < activities.length; idx++) {
             if (this.shouldExit) {
@@ -114,6 +117,37 @@ export class Compactor {
             }
         }
         await state.save();
+    }
+
+    /**
+     * @param {CompactorState} state
+     * @param {Activity[]} activities
+     */
+    async #garbageCollectActivities(state, activities) {
+        // Delete removed activites
+        if (state.size > activities.length) {
+            const removedActivities = [];
+            const activitiesIds = new Set(activities.map(a => a._id));
+
+            for(const knowActivityId of state.knownActivities) {
+                if (! activitiesIds.has(knowActivityId)) {
+                    removedActivities.push(knowActivityId);
+                }
+            }
+            logger.info('Activities to remove: %d', removedActivities.length);
+            for(const activityId of removedActivities) {
+                const activityState = state.get(activityId);
+                if (!activityState) {
+                    logger.warn('Activity to remove not found in global state !: %s', activityId);
+                    continue;
+                }
+                await this.#updateOwners({_id: activityId, owners: []}, activityState);
+                await state.remove(activityId);
+            }
+        }
+
+        // Garbage collect state files in activities
+        await state.garbageCollect();
     }
 
     /**
