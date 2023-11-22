@@ -1,6 +1,6 @@
 import { config } from './config.js';
 import pino from 'pino';
-import { now } from './dateUtils.js';
+import { now } from './utils/date.js';
 
 const logsFolder = new URL('../logs', import.meta.url);
 const logFile = `${logsFolder.pathname}/${now().toISOString()}.log`;

@@ -1,10 +1,10 @@
-import { now, duration, formatDuration } from './dateUtils.js';
+import { now, duration, formatDuration } from './utils/date.js';
 import { logger } from './logger.js';
 import { MinioClient } from './minio.js';
 import { SimvaClient } from './simva.js';
 import { getState } from './state.js';
 import { createHash } from 'node:crypto';
-import { diffArray } from './utils.js';
+import { diffArray } from './utils/misc.js';
 
 /** @typedef {import('./config.js').CompactorOptions} CompactorOptions */
 /** @typedef {import('./simva.js').Activity} Activity */

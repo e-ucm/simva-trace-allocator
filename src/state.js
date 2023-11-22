@@ -2,9 +2,9 @@ import { MinioClient } from './minio.js';
 import { logger } from './logger.js';
 import { join } from 'node:path';
 import { access, constants, copyFile, mkdir, open, readdir, rm, unlink } from 'node:fs/promises';
-import { mktempPath } from './fileUtils.js';
-import { duration, epoch, formatDuration, now, parseDate } from './dateUtils.js';
-import { diffArray, diffSet } from './utils.js';
+import { mktempPath } from './utils/file.js';
+import { duration, epoch, formatDuration, now, parseDate } from './utils/date.js';
+import { diffArray, diffSet } from './utils/misc.js';
 
 /** @typedef {import('./config.js').CompactorOptions} CompactorOptions */
 
