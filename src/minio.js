@@ -142,6 +142,20 @@ export class MinioClient {
         return this.#minio.removeObjects(this.#opts.bucket, paths);
 	}
 
+    /**
+     * 
+     * @param {string} path 
+     * @returns {Promise<boolean>}
+     */
+    async fileExists(path) {
+        // XXX used version of minio sdk do not have proper types
+        // @ts-ignore
+        const objectsStream = await this.#minio.listObjects(this.#opts.bucket, path);
+        const iterator = objectsStream[Symbol.asyncIterator]();
+        const nextValue = await iterator.next();
+        return ! nextValue.done;
+    }
+
 }
 
 

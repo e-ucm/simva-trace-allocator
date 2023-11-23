@@ -55,6 +55,8 @@ export class Compactor {
             this.status.processing = true;
             try {
                 this.status.startTime = now();
+                logger.info('Check consistency');
+                await this.#checkConsistency();
                 logger.info('Start compaction');
                 await this.#compactActivities();
                 const end = now();
@@ -80,6 +82,42 @@ export class Compactor {
         const nowDate = now();
         const durationStr = formatDuration(duration(this.status.startTime, nowDate));
         return durationStr;
+    }
+
+    async #checkConsistency() {
+        let state = await getState(this.#opts, this.#minio);
+
+        let activities = await this.#simva.getActivities({ type: ['gameplay', 'miniokafka', 'rageminio'] });
+
+        logger.info(`Known %d activities, received %d`, state.size, activities.length);
+
+        const usersDir = this.#opts.minio.users_dir;
+        const tracesFilename = this.#opts.minio.traces_file;
+
+        this.status.total = activities.length;
+        for(let idx=0; idx < activities.length; idx++) {
+            if (this.shouldExit) {
+                break;
+            }
+
+            this.status.current = idx;
+            const activity = activities[idx];
+            logger.debug('Check consistency of activity: %s', activity._id);
+
+            let activityState = state.get(activity._id);
+            if (activityState === undefined) {
+                logger.debug(`New activity, nothing to do: %s`, activity._id);
+                continue;
+            }
+
+            await activityState.checkConsistency();
+            for(const username of activityState.owners) {
+                const remotePath = `${usersDir}/${username}/${activityState.activityId}/${tracesFilename}`;
+                if (! await this.#minio.fileExists(remotePath) ) {
+                    logger.warn('User \'%s\' compact file for activity \'%s\' not found: %s', username, activityState.activityId, remotePath);
+                }
+            }    
+        }
     }
 
     async #compactActivities() {

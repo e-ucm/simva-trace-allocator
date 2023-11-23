@@ -362,6 +362,28 @@ export class ActivityCompactionState {
 		const remotePath = this.#stateRemotePath(sha1);
 		await this.#minio.copyToRemoteFile(localPath, remotePath);
 	}
+
+	async checkConsistency() {
+		if (this.currentSha1 === null)  {
+			logger.debug('Activity new and consistent: %s', this.activityId);
+		}
+		const localStatePath = this.#stateLocalPath();
+		const localFilesStatePath = this.#filesStateLocalPath();
+		if (! await fileExists(localStatePath)) {
+			logger.warn('Local state file for activity \'%s\' not found: %s', this.activityId, localStatePath);
+		}
+		if (! await fileExists(localFilesStatePath)) {
+			logger.warn('Local files state for activity \'%s\' not found: %s', this.activityId, localFilesStatePath);
+		}
+		const remoteStatePath = this.#stateRemotePath();
+		const remoteFilesStatePath = this.#filesStateRemotePath();
+		if (! await this.#minio.fileExists(remoteStatePath)) {
+			logger.warn('Remote state file for activity \'%s\' not found: %s', this.activityId, remoteStatePath);
+		}
+		if (! await this.#minio.fileExists(remoteFilesStatePath)) {
+			logger.warn('Remote files state for activity \'%s\' not found: %s', this.activityId, remoteFilesStatePath);
+		}
+	}
 }
 
 export const STATE_FILENAME = 'state.json';
