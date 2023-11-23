@@ -366,23 +366,32 @@ export class ActivityCompactionState {
 	async checkConsistency() {
 		if (this.currentSha1 === null)  {
 			logger.debug('Activity new and consistent: %s', this.activityId);
+			return true;
 		}
+
+		let consistent = true;
 		const localStatePath = this.#stateLocalPath();
 		const localFilesStatePath = this.#filesStateLocalPath();
 		if (! await fileExists(localStatePath)) {
 			logger.warn('Local state file for activity \'%s\' not found: %s', this.activityId, localStatePath);
+			consistent = false;
 		}
 		if (! await fileExists(localFilesStatePath)) {
 			logger.warn('Local files state for activity \'%s\' not found: %s', this.activityId, localFilesStatePath);
+			consistent = false;
 		}
 		const remoteStatePath = this.#stateRemotePath();
 		const remoteFilesStatePath = this.#filesStateRemotePath();
 		if (! await this.#minio.fileExists(remoteStatePath)) {
 			logger.warn('Remote state file for activity \'%s\' not found: %s', this.activityId, remoteStatePath);
+			consistent = false;
 		}
 		if (! await this.#minio.fileExists(remoteFilesStatePath)) {
 			logger.warn('Remote files state for activity \'%s\' not found: %s', this.activityId, remoteFilesStatePath);
+			consistent = false;
 		}
+
+		return consistent;
 	}
 }
 
@@ -567,7 +576,7 @@ export class CompactorState {
 		if (this.#opts.removeDryRun) {
 			logger.info('DRY RUN - Known activity removed: %s', activityId);
 		} else {
-			activityState.clear();
+			await activityState.clear();
 			this.#states.delete(activityId);
 			logger.info('Known activity removed: %s', activityId);
 		}

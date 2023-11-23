@@ -95,6 +95,7 @@ export class Compactor {
         const tracesFilename = this.#opts.minio.traces_file;
 
         this.status.total = activities.length;
+        const inconsistent = [];
         for(let idx=0; idx < activities.length; idx++) {
             if (this.shouldExit) {
                 break;
@@ -110,13 +111,27 @@ export class Compactor {
                 continue;
             }
 
-            await activityState.checkConsistency();
+            let consistent = await activityState.checkConsistency();
             for(const username of activityState.owners) {
                 const remotePath = `${usersDir}/${username}/${activityState.activityId}/${tracesFilename}`;
                 if (! await this.#minio.fileExists(remotePath) ) {
                     logger.warn('User \'%s\' compact file for activity \'%s\' not found: %s', username, activityState.activityId, remotePath);
+                    consistent = false;
                 }
-            }    
+            }
+            if (!consistent) {
+                inconsistent.push(activity._id);
+            }
+        }
+        if (!this.#opts.tryRecovery || inconsistent.length === 0) {
+            return;
+        }
+        logger.info('Start recovery');
+        for(const activity of inconsistent) {
+            const activityState = state.get(activity);
+            await this.#updateOwners({_id: activity, owners: []}, activityState);
+            await state.remove(activity);
+            logger.info('Removed %s', activity);
         }
     }
 

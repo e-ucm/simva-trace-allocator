@@ -11,6 +11,7 @@ import * as inspector from 'inspector';
  * @property {boolean} removeDryRun
  * @property {number} gcInterval
  * @property {boolean} copyInsteadRename
+ * @property {boolean} tryRecovery
  * @property {import('./minio.js').MinioOpts} minio
  * @property {import('./simva.js').SimvaOpts} simva
  */
@@ -25,6 +26,7 @@ export const config = {
     removeDryRun: process.env.REMOVE_DRY_RUN !== undefined ? (process.env.REMOVE_DRY_RUN.toLocaleLowerCase() === 'false' ? false : true) : true,
     gcInterval: process.env.GC_INTERVAL !== undefined ? parseInt(process.env.GC_INTERVAL) : 10*24*60*60*1000,
     copyInsteadRename: process.env.COPY_INSTEAD_RENAME !== undefined ? (process.env.COPY_INSTEAD_RENAME.toLocaleLowerCase() === 'false' ? false : true) : true,
+    tryRecovery: process.env.TRY_RECOVERY !== undefined ? (process.env.TRY_RECOVERY.toLocaleLowerCase() === 'false' ? false : true) : false,
     minio: {
         host: process.env.MINIO_HOST || 'minio.simva.example.org',
         useSSL: process.env.MINIO_SSL !== undefined ? (process.env.MINIO_SSL.toLocaleLowerCase() === 'false' ? false : true) : false,
