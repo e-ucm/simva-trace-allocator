@@ -69,6 +69,9 @@ export class ActivityCompactionState {
 	}
 
 	async garbageCollect() {
+		if (this.currentSha1 === undefined) {
+			return;
+		}
 		const localHashesAndFiles = await this.#listLocalHashes();
 		const remoteHashesAndFiles = await this.#listRemoteHashes();
 
@@ -76,8 +79,10 @@ export class ActivityCompactionState {
 		const remoteHashes = new Set(remoteHashesAndFiles.keys());
 		const setsDiff = diffSet(localHashes, remoteHashes);
 		if (setsDiff.added.length > 0 || setsDiff.removed.length > 0) {
-			logger.warn('Local and remote folders for activity not synced: %s', this.activityId);
+			logger.warn('Local and remote folders for activity not synced, garbage collection skipped: %s', this.activityId);
+			return;
 		}
+
 		/** @type {string[]} */
 		let localFilesToRemove = [];
 		/** @type {string[]} */
@@ -116,6 +121,9 @@ export class ActivityCompactionState {
 			} else {
 				hashes.set(hash, [file]);
 			}
+		}
+		if (this.currentSha1 !== undefined && hashes.size < 2 ) {
+
 		}
 		return hashes;
 	}
@@ -412,7 +420,12 @@ export class CompactorState {
 
 		logger.debug('Garbage collection started');
 		for(const activity of this.#states.values()) {
-			await activity.garbageCollect();
+			try {
+				await activity.garbageCollect();
+			} catch (error) {
+				logger.error('Could not garbage collect: %s', activity.activityId);
+				logger.error(error);
+			}
 		}
 		const finishTime = now();
 		logger.info('Garbage collection finished, took: %s', formatDuration(duration(nowDate, finishTime)));
@@ -427,7 +440,7 @@ export class CompactorState {
 		const withState = withFile(path);
 		const result = await withState(async (file) => {
 			const content = await file.readFile('utf-8');
-			this.#initState(content);
+			await this.#initState(content);
 			return true;
 		}, false);
 		if (result !== undefined) {
@@ -446,9 +459,8 @@ export class CompactorState {
 	 */
 	async #loadRemoteState() {
 		try {
-			const content = await this.#minio.getFile(this.#remotePath);
-			this.#initState(content);
-			return true;
+			await this.#minio.copyFromRemoteFile(this.#remotePath, this.#localPath);
+			return this.#loadLocalState();
 		} catch (e) {
 			logger.warn(e);
 		}
@@ -463,9 +475,17 @@ export class CompactorState {
 	 * 
 	 * @param {string} content 
 	 */
-	#initState(content) {
+	async #initState(content) {
 		const serializedState = /** @type {SerializedCompactorState} */(JSON.parse(content, withContextReviver(this.#opts, this.#minio)));
 		this.#states = serializedState.states;
+		for(const activity of this.#states.values()) {
+			try {
+				await activity.init();
+			} catch (error) {
+				logger.error('Could not initialize activity: ', activity.activityId);
+				logger.error(error);
+			}
+		}
 		this.#lastGC = serializedState.lastGC !== null ? new Date(Date.parse(serializedState.lastGC)) : null;
 	}
 
@@ -476,8 +496,16 @@ export class CompactorState {
 			lastGC: this.#lastGC !== null ? this.#lastGC.toISOString() : null
 		}
 		const content = JSON.stringify(serializedState, replacer);
-		await this.#saveLocalState(content);
-		await this.#saveRemoteState(content);
+		await this.#saveStateLocal(content);
+		await this.#copyStateToRemote();
+	}
+
+	/**
+	 * 
+	 * @returns 
+	 */
+	async #copyStateToRemote() {
+		return this.#minio.copyToRemoteFile(this.#localPath, this.#remotePath);
 	}
 
 	/**
@@ -485,16 +513,7 @@ export class CompactorState {
 	 * @param {string} content 
 	 * @returns 
 	 */
-	async #saveRemoteState(content) {
-		return this.#minio.setFile(this.#remotePath, content);
-	}
-
-	/**
-	 * 
-	 * @param {string} content 
-	 * @returns 
-	 */
-	async #saveLocalState(content) {
+	async #saveStateLocal(content) {
 		const path = this.#localPath;
 		const withFileState = withFile(path, 'w');
 		await withFileState(async (file) => {

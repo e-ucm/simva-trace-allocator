@@ -134,15 +134,21 @@ export class Compactor {
                     removedActivities.push(knowActivityId);
                 }
             }
-            logger.info('Activities to remove: %d', removedActivities.length);
+            logger.debug('Activities to remove: %d', removedActivities.length);
             for(const activityId of removedActivities) {
                 const activityState = state.get(activityId);
                 if (!activityState) {
                     logger.warn('Activity to remove not found in global state !: %s', activityId);
                     continue;
                 }
-                await this.#updateOwners({_id: activityId, owners: []}, activityState);
-                await state.remove(activityId);
+                try {
+                    await this.#updateOwners({_id: activityId, owners: []}, activityState);
+                    await state.remove(activityId);
+                    logger.info('Activity removed: %s', activityId);
+                } catch(error) {
+                    logger.error('Could not remove activity: %s', activityId);
+                    logger.error(error);
+                }
             }
         }
 
