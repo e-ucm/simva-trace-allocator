@@ -211,15 +211,17 @@ export class ActivityCompactionState {
 	 * @returns 
 	 */
 	async #loadLocalFilesState() {
-		/** @type {string[]} */
-		let files=[];
 		const filesStatePath = this.#filesStateLocalPath();
 		const withFileState = withFile(filesStatePath);
 
-		await withFileState(async (fileState) => {
+		/** @type {string[]} */
+		const files = await withFileState(async (fileState) => {
+			/** @type {string[]} */
+			const files=[];
 			for await (const line of fileState.readLines()) {
 				files.push(line);
 			}
+			return files;
 		}, false);
 
 		return files;
@@ -274,7 +276,7 @@ export class ActivityCompactionState {
 	 */
 	async #saveLocalState(filesToAdd, sha1) {
 		const statePath = this.#stateLocalPath(sha1);
-		const tmpPath = await mktempPath();
+		const tmpPath = mktempPath();
 		if (this.currentSha1 !== null && this.currentSha1 !== sha1) {
 			const currentStatePath = this.#stateLocalPath();
 			if (!await fileExists(currentStatePath)) {
@@ -329,7 +331,7 @@ export class ActivityCompactionState {
 	 */
 	async #saveLocalFilesState(filesToAdd, sha1) {
 		const filesStatePath = this.#filesStateLocalPath(sha1);
-		const tmpPath = await mktempPath();
+		const tmpPath = mktempPath();
 		if (this.currentSha1 !== null && this.currentSha1 !== sha1) {
 			const currentFilesStatePath = this.#filesStateLocalPath();
 			await copyNoOverwrite(currentFilesStatePath, tmpPath);
