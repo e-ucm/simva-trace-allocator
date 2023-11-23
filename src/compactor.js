@@ -240,7 +240,7 @@ export class Compactor {
         const tracesFilename = this.#opts.minio.traces_file;
         for(const username of activityState.owners) {
             const remotePath = `${usersDir}/${username}/${activityState.activityId}/${tracesFilename}`;
-            this.#minio.copyToRemoteFile(localStatePath, remotePath);
+            await this.#minio.copyToRemoteFile(localStatePath, remotePath);
         }
         logger.info(`Copied compacted file for activity %s to owners %s`, activity._id, activityState.owners.join(', '));
     }
