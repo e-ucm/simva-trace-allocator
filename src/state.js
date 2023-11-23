@@ -1,8 +1,7 @@
 import { MinioClient } from './minio.js';
 import { logger } from './logger.js';
 import { join } from 'node:path';
-import { access, constants, copyFile, mkdir, open, readdir, rm, unlink } from 'node:fs/promises';
-import { mktempPath } from './utils/file.js';
+import { copyNoOverwrite, ensureDirectoryStructureExists, fileExists, forceRemove, listFiles, mktempPath, rename, withFile } from './utils/file.js';
 import { duration, epoch, formatDuration, now, parseDate } from './utils/date.js';
 import { diffArray, diffSet } from './utils/misc.js';
 
@@ -51,11 +50,7 @@ export class ActivityCompactionState {
 
 	async init() {
 		const activityStatePath = join(this.#opts.localStatePath, this.activityId);
-		try {
-			await access(activityStatePath, constants.R_OK | constants.W_OK);
-		} catch(e) {
-			await mkdir(activityStatePath);
-		}
+		await ensureDirectoryStructureExists(activityStatePath);
 	}
 
 	/**
@@ -111,17 +106,15 @@ export class ActivityCompactionState {
 		/** @type {Map<string, string[]>} */
 		const hashes = new Map();
 		const activityPath = join(this.#opts.localStatePath, this.activityId);
-		const files = await readdir(activityPath, { withFileTypes: true});
+		const files = await listFiles(activityPath);
 		for(const file of files) {
-			if (file.isFile()) {
-				const chunks = file.name.split('-');
-				const hash = chunks[0];
-				const entry = hashes.get(hash);
-				if (entry) {
-					entry.push(file.name);
-				} else {
-					hashes.set(hash, [file.name]);
-				}
+			const chunks = file.split('-');
+			const hash = chunks[0];
+			const entry = hashes.get(hash);
+			if (entry) {
+				entry.push(file);
+			} else {
+				hashes.set(hash, [file]);
 			}
 		}
 		return hashes;
@@ -156,10 +149,10 @@ export class ActivityCompactionState {
 	async #removeRemoteFiles(files) {
 		files = files.map((file) => `${this.#opts.remoteStatePath}/${this.activityId}/${file}`);
 		if (this.#opts.removeDryRun) {
-			logger.debug('DRY RUN - Removed remote files: %s', files.join(',\n'));
+			logger.debug('DRY RUN - Removed remote files:\n %s', files.join(',\n'));
 		} else {
 			await this.#minio.removeRemoteFiles(files);
-			logger.debug('Removed remote file: %s', files.join(',\n'));
+			logger.debug('Removed remote file:\n %s', files.join(',\n'));
 		}
 	}
 
@@ -173,7 +166,7 @@ export class ActivityCompactionState {
 			if (this.#opts.removeDryRun) {
 				logger.debug('DRY RUN - Removed local file: %s', localPath);
 			} else {
-				await rm(localPath);
+				await forceRemove(localPath);
 				logger.debug('Removed local file: %s', localPath);
 			}
 		}
@@ -188,10 +181,10 @@ export class ActivityCompactionState {
 		const fileEntries = await this.#minio.listFiles(`${this.#opts.remoteStatePath}/${this.activityId}/`);
 		const files = fileEntries.map((e) => e.name);
 		if (this.#opts.removeDryRun) {
-			logger.debug('DRY RUN - Removed all remote files for activity %s: %s', this.activityId, files.join(',\n'));
+			logger.debug('DRY RUN - Removed all remote files for activity %s:\n %s', this.activityId, files.join(',\n'));
 		} else {
 			await this.#minio.removeRemoteFiles(files);
-			logger.debug('Removed all remote files for activity %s: %s', this.activityId, files.join(',\n'));
+			logger.debug('Removed all remote files for activity %s:\n %s', this.activityId, files.join(',\n'));
 		}
 	}
 
@@ -200,7 +193,7 @@ export class ActivityCompactionState {
 		if (this.#opts.removeDryRun) {
 			logger.debug('DRY RUN - Removed all local files for activity %s: %s', this.activityId, activityStatePath);
 		} else {
-			await rm(activityStatePath, {force: true, recursive: true});
+			await forceRemove(activityStatePath);
 			logger.debug('Removed all remote files for activity %s: %s', this.activityId,activityStatePath);
 		}
 	}
@@ -211,27 +204,16 @@ export class ActivityCompactionState {
 	 */
 	async #loadLocalFilesState() {
 		/** @type {string[]} */
-		let files;
+		let files=[];
 		const filesStatePath = this.#filesStateLocalPath();
+		const withFileState = withFile(filesStatePath);
 
-		let filesState;
-		try {
-			filesState = await open(filesStatePath);
-			for await (const line of filesState.readLines()) {
+		await withFileState(async (fileState) => {
+			for await (const line of fileState.readLines()) {
 				files.push(line);
 			}
-		} catch (e) {
-			if (filesState === undefined) {
-				// Just warn, the file may not exist
-				logger.warn(e);
-			} else {
-				throw e;
-			}
-		} finally {
-			if (filesState !== undefined) {
-				await filesState.close();
-			}
-		}
+		}, false);
+
 		return files;
 	}
 
@@ -287,31 +269,20 @@ export class ActivityCompactionState {
 		const tmpPath = await mktempPath();
 		if (this.currentSha1 !== null && this.currentSha1 !== sha1) {
 			const currentStatePath = this.#stateLocalPath();
-			try {
-				await access(currentStatePath, constants.F_OK);
-			} catch (e) {
+			if (!await fileExists(currentStatePath)) {
 				const currentStateRemotePath = this.#stateRemotePath();
 				await this.#minio.copyFromRemoteFile(currentStateRemotePath, currentStatePath);
 			}
-			await copyFile(currentStatePath, tmpPath, constants.COPYFILE_EXCL);
+			await copyNoOverwrite(currentStatePath, tmpPath);
 		}
-		let state;
-		try {
-			state = await open(tmpPath, 'a');
+		const withStateFile = withFile(tmpPath, 'a');
+		withStateFile(async (state) => {
 			for (const file of filesToAdd) {
 				const content = await this.#minio.getFile(file);
 				await state.write(content);
 			}
-			// XXX rename does not work if statePath is bind mounted
-			await copyFile(tmpPath, statePath);
-			await unlink(tmpPath);
-		} catch (e) {
-			throw e;
-		} finally {
-			if (state !== undefined) {
-				await state.close();
-			}
-		}
+		});
+		await rename(tmpPath, statePath, this.#opts.copyInsteadRename);
 	}
 
 	/**
@@ -353,24 +324,15 @@ export class ActivityCompactionState {
 		const tmpPath = await mktempPath();
 		if (this.currentSha1 !== null && this.currentSha1 !== sha1) {
 			const currentFilesStatePath = this.#filesStateLocalPath();
-			await copyFile(currentFilesStatePath, tmpPath, constants.COPYFILE_EXCL);
+			await copyNoOverwrite(currentFilesStatePath, tmpPath);
 		}
-		let filesState;
-		try {
-			filesState = await open(tmpPath, 'a');
+		const withFilesState = withFile(tmpPath, 'a');
+		await withFilesState(async (filesState) => {
 			for (const line of filesToAdd) {
 				await filesState.write(line+'\n');
 			}
-			// XXX rename does not work if statePath is bind mounted
-			await copyFile(tmpPath, filesStatePath);
-			await unlink(tmpPath);
-		} catch (e) {
-			throw e;
-		} finally {
-			if (filesState !== undefined) {
-				await filesState.close();
-			}
-		}
+		});
+		await rename(tmpPath, filesStatePath, this.#opts.copyInsteadRename);
 	}
 
 	/**
@@ -462,18 +424,14 @@ export class CompactorState {
 	 */
 	async #loadLocalState() {
 		const path = this.#localPath;
-		let file;
-		try {
-			file = await open(path);
+		const withState = withFile(path);
+		const result = await withState(async (file) => {
 			const content = await file.readFile('utf-8');
 			this.#initState(content);
 			return true;
-		} catch(e) {
-			logger.warn(e);
-		} finally {
-			if (file !== undefined) {
-				await file.close();
-			}
+		}, false);
+		if (result !== undefined) {
+			return result;
 		}
 		return false;
 	}
@@ -538,15 +496,10 @@ export class CompactorState {
 	 */
 	async #saveLocalState(content) {
 		const path = this.#localPath;
-		let file;
-		try {
-			file = await open(path, 'w');
-			await file.writeFile(content);
-		} finally {
-			if (file !== undefined) {
-				await file.close();
-			}
-		}
+		const withFileState = withFile(path, 'w');
+		await withFileState(async (file) => {
+			file.writeFile(content);
+		})
 	}
 
 	get size() {
