@@ -202,7 +202,7 @@ export class ActivityCompactionState {
 			logger.debug('DRY RUN - Removed all local files for activity %s: %s', this.activityId, activityStatePath);
 		} else {
 			await forceRemove(activityStatePath);
-			logger.debug('Removed all remote files for activity %s: %s', this.activityId,activityStatePath);
+			logger.debug('Removed all local files for activity %s: %s', this.activityId,activityStatePath);
 		}
 	}
 
