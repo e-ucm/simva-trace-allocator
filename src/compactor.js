@@ -133,6 +133,7 @@ export class Compactor {
             await state.remove(activity);
             logger.info('Removed %s', activity);
         }
+        await state.save();
     }
 
     async #compactActivities() {
