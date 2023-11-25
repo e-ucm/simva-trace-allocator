@@ -131,7 +131,6 @@ export class Compactor {
             const activityState = state.get(activity);
             await this.#updateOwners({_id: activity, owners: []}, activityState);
             await state.remove(activity);
-            logger.info('Removed %s', activity);
         }
         await state.save();
     }
