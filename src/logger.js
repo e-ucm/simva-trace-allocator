@@ -24,7 +24,6 @@ if (process.env.NODE_ENV !== 'production') {
                 target: 'pino-pretty',
                 level: (process.env.LOG_LEVEL || 'info').toLowerCase(),
                 options: {
-                    translateTime: 'SYS:hh:MM:ss TT',
                     ignore: 'pid,hostname'
                 }
             }
@@ -35,7 +34,6 @@ if (process.env.NODE_ENV !== 'production') {
             target: 'pino/file',
             level: (process.env.LOG_LEVEL || 'info').toLowerCase(),
             options: {
-                translateTime: 'SYS:hh:MM:ss TT',
                 singleLine: true,
                 ignore: 'pid,hostname'
             }
