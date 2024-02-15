@@ -286,7 +286,8 @@ export class ActivityCompactionState {
 			await copyNoOverwrite(currentStatePath, tmpPath);
 		}
 		const withStateFile = withFile(tmpPath, 'a');
-		withStateFile(async (state) => {
+
+		await withStateFile(async (state) => {
 			for (const file of filesToAdd) {
 				const content = await this.#minio.getFile(file);
 				await state.write(content);
