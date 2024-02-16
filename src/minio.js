@@ -10,6 +10,7 @@ import { logger } from './logger.js';
  * @property {string} secretKey
  * @property {string} bucket
  * @property {string} topics_dir
+ * @property {string} traces_topic
  * @property {string} users_dir
  * @property {string} traces_file
  */
@@ -121,7 +122,7 @@ export class MinioClient {
      * @returns 
      */
     async getTraces(activityId){
-        return this.listFiles(`/${this.#opts.topics_dir}/traces/_id=${activityId}/`);
+        return this.listFiles(`/${this.#opts.topics_dir}/${this.#opts.traces_topic}/_id=${activityId}/`);
     }
 
     /**

@@ -35,6 +35,7 @@ export const config = {
         secretKey: process.env.MINIO_SECRET_KEY || 'ChanGeMe',
         bucket: process.env.MINIO_BUCKET || 'traces',
         topics_dir: process.env.MINIO_TOPICS_DIR || 'kafka-topics',
+        traces_topic: process.env.MINIO_TRACES_TOPIC || 'traces',
         users_dir: process.env.MINIO_USERS_DIR || 'users',
         traces_file: process.env.MINIO_TRACES_FILE || 'traces_v2.json',
     },
