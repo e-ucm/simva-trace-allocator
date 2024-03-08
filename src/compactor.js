@@ -5,6 +5,7 @@ import { SimvaClient } from './simva.js';
 import { getState } from './state.js';
 import { createHash } from 'node:crypto';
 import { diffArray } from './utils/misc.js';
+import * as fs from 'fs';
 
 /** @typedef {import('./config.js').CompactorOptions} CompactorOptions */
 /** @typedef {import('./simva.js').Activity} Activity */
@@ -291,9 +292,20 @@ export class Compactor {
         const localStatePath = activityState.localStatePath;
         const usersDir = this.#opts.minio.users_dir;
         const tracesFilename = this.#opts.minio.traces_file;
+        const localJsonArrayStatePath = localStatePath.replace('-state.txt', '-jsonArray.txt');
+        // Read the input file
+        const inputLines = fs.readFileSync(localStatePath, 'utf-8').split('\n');
+        // Parse each line as JSON and collect into an array
+        const jsonArray = inputLines
+          .filter(line => line.trim() !== '') // Filter out empty lines
+          .map(line => JSON.parse(line));
+        // Write the array to the output file
+        const outputContent = `${JSON.stringify(jsonArray, null, 2)}`;
+        fs.writeFileSync(localJsonArrayStatePath, outputContent, 'utf-8');
+        console.log(`Conversion to a JSON Array completed. Output written to ${localJsonArrayStatePath}`);
         for(const username of activityState.owners) {
             const remotePath = `${usersDir}/${username}/${activityState.activityId}/${tracesFilename}`;
-            await this.#minio.copyToRemoteFile(localStatePath, remotePath);
+            await this.#minio.copyToRemoteFile(localJsonArrayStatePath, remotePath);
         }
         logger.info(`Copied compacted file for activity %s to owners %s`, activity._id, activityState.owners.join(', '));
     }
