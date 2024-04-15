@@ -292,6 +292,8 @@ export class Compactor {
         const localStatePath = activityState.localStatePath;
         const usersDir = this.#opts.minio.users_dir;
         const tracesFilename = this.#opts.minio.traces_file;
+        // DISABLE GENERATE JSON ARRAY
+        /*
         const localJsonArrayStatePath = localStatePath.replace('-state.txt', '-jsonArray.txt');
         // Read the input file
         const inputLines = fs.readFileSync(localStatePath, 'utf-8').split('\n');
@@ -306,6 +308,11 @@ export class Compactor {
         for(const username of activityState.owners) {
             const remotePath = `${usersDir}/${username}/${activityState.activityId}/${tracesFilename}`;
             await this.#minio.copyToRemoteFile(localJsonArrayStatePath, remotePath);
+        }
+        */
+        for(const username of activityState.owners) {
+            const remotePath = `${usersDir}/${username}/${activityState.activityId}/${tracesFilename}`;
+            await this.#minio.copyToRemoteFile(localStatePath, remotePath);
         }
         logger.info(`Copied compacted file for activity %s to owners %s`, activity._id, activityState.owners.join(', '));
     }
