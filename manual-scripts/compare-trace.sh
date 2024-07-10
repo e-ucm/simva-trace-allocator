@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 [[ "${DEBUG:-false}" == "true" ]] && set -x
 
@@ -15,7 +15,8 @@ notfoundinfolderToCompare=()
 notfoundinfolder=()
 
 # Count the total number of folder
-total_folders=$(ls -l "$folderOriginal" | grep -c ^d)  
+folders=$(find "$folderOriginal" -mindepth 1 -maxdepth 1 -type d)
+total_folders=$(echo "$folders" | wc -l)
 
 # Initialize a counter for the progress bar
 count=0
@@ -25,22 +26,23 @@ for folder in "$folderOriginal"/*; do
     count=$(($count+1))
     id=$(basename "$folder")
     echo -ne "Processing $id: $((count * 100 / total_folders))% ($count / $total_folders) \r"
-    result=$("$src_dir/compare-trace-one-folder.sh" "$folderOriginal" "$folderToCompare" "$id" "false")
+    "$src_dir/compare-trace-one-folder.sh" "$folderOriginal" "$folderToCompare" "$id" "false"
+    result=$?
     case $result in
-      "identical")
+      0)
         identical+=($id)
       ;;
-      "different")
+      3)
         differents+=($id)
       ;;
-      "notfoundinfolderToCompare")
-        notfoundinfolderToCompare+=($id)
-      ;;
-      "notfoundinfolder")
+      4)
         notfoundinfolder+=($id)
       ;;
+      5)
+        notfoundinfolderToCompare+=($id)
+      ;;
       *)
-        sleep 1
+        sleep 0
       ;;
     esac
 done
@@ -60,3 +62,4 @@ for id in "${differents[@]}"; do
   echo 1>&2 "Files in $folderOriginal/$id/traces.json and $folderToCompare/$id/traces.json are different: $folderToCompare/$id/diff.txt"
 done
 echo "total : $total_folders"
+exit 0

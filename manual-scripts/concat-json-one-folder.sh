@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 [[ "${DEBUG:-false}" == "true" ]] && set -x
 
@@ -59,3 +59,4 @@ if [[ ! -e "$output_file" ]]; then
 else 
     echo "Concatenation file already present in $output_file."
 fi
+exit 0

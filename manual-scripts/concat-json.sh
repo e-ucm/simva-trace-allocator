@@ -1,4 +1,4 @@
-    #!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 [[ "${DEBUG:-false}" == "true" ]] && set -x
 
@@ -16,7 +16,8 @@ src_dir=$(dirname "$0")
 echo $src_dir
 
 # Count the total number of folder
-total_folders=$(ls -l "$1" | grep -c ^d)  
+folders=$(find "$1" -mindepth 1 -maxdepth 1 -type d)
+total_folders=$(echo "$folders" | wc -l)
 
 # Initialize a counter for the progress bar
 count=0
@@ -30,3 +31,4 @@ for folder in "$1"/*; do
     fi
 done
 echo "Completed!"
+exit 0
