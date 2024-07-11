@@ -26,8 +26,10 @@ for folder in "$folderOriginal"/*; do
     count=$(($count+1))
     id=$(basename "$folder")
     echo -ne "Processing $id: $((count * 100 / total_folders))% ($count / $total_folders) \r"
+    set +e
     "$src_dir/compare-trace-one-folder.sh" "$folderOriginal" "$folderToCompare" "$id" "false"
     result=$?
+    set -e
     case $result in
       0)
         identical+=($id)
