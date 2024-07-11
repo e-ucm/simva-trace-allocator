@@ -49,7 +49,7 @@ if [[ ! -e "$output_file" ]]; then
         cat "$file" >> "$output_file"
 
         # Update the progress bar
-        echo -ne "Progress: $((count * 100 / total_files))% ($count / $total_files) \r"
+        echo -ne "Progress $folder_id : $((count * 100 / total_files))% ($count / $total_files) \r"
     done
     
     # Print a newline after the loop completes
@@ -58,5 +58,5 @@ if [[ ! -e "$output_file" ]]; then
     echo "Concatenation completed. Output saved in $output_file."
 else 
     echo "Concatenation file already present in $output_file."
-fi
+fi;
 exit 0
