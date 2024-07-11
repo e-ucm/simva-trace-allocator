@@ -35,7 +35,7 @@ output_file="$output_dir/traces.json"
 
 # Concatenate files only if the output file doesn't exist
 if [[ ! -e "$output_file" ]]; then 
-    files=$(find $folder -mindepth 1 -maxdepth 1 -iname \*.json -type f)
+    files=$(find $folder -mindepth 1 -maxdepth 1 -iname \*.json -type f | sort -d)
     total_files=$(echo "$files" | wc -w)  # Count the total number of files
     
     # Initialize a counter for the progress bar
