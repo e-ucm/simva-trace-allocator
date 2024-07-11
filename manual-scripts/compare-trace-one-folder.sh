@@ -52,14 +52,19 @@ else
         fi
     else
         # Compare contents of traces.json files and show differences
+        set +e
         diffoutput=$(diff -w -B "$folder1/$id/traces.json" "$folder2/$id/traces.json")
+        set -e
+        if [[ $outputError == "true" ]]; then 
+            echo $diffoutput
+        fi
         if [[ $diffoutput == "" ]]; then
             #identical
             result=0
         else
             #different
             result=3
-            $diffoutput > "$folder2/$id/diff.txt"
+            echo "$diffoutput" > "$folder2/$id/diff.txt"
             if [[ $outputError == "true" ]]; then 
                 echo 1>&2 "Files in $folder1/$id/traces.json and $folder2/$id/traces.json are different: $folder2/$id/diff.txt"
             fi
