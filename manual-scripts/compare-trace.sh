@@ -13,6 +13,7 @@ identical=()
 differents=()
 notfoundinfolderToCompare=()
 notfoundinfolder=()
+errorInExec=()
 
 # Count the total number of folder
 folders=$(find "$folderOriginal" -mindepth 1 -maxdepth 1 -type d)
@@ -25,7 +26,7 @@ count=0
 for folder in "$folderOriginal"/*; do
     count=$(($count+1))
     id=$(basename "$folder")
-    echo -ne "Processing $id: $((count * 100 / total_folders))% ($count / $total_folders) \r"
+    echo -ne "Processing $id: $((count * 100 / total_folders))% ($count / $total_folders)\r"
     set +e
     "$src_dir/compare-trace-one-folder.sh" "$folderOriginal" "$folderToCompare" "$id" "false"
     result=$?
@@ -33,6 +34,9 @@ for folder in "$folderOriginal"/*; do
     case $result in
       0)
         identical+=($id)
+      ;;
+      1)
+        errorInExec+=($id)
       ;;
       3)
         differents+=($id)
@@ -51,6 +55,13 @@ done
 echo
 echo "Comparison complete."
 echo "Identical : ${#identical[@]}"
+#for id in "${identical[@]}"; do
+#  echo 1>&2 $id
+#done
+echo "errorDuringExec : ${#errorInExec[@]}"
+for id in "${errorInExec[@]}"; do
+  echo 1>&2 Error during execution processing $folderOriginal/$id/ and $folderToCompare/$id/.
+done
 echo "notfoundinfolder : ${#notfoundinfolder[@]}"
 for id in "${notfoundinfolder[@]}"; do
   echo 1>&2 "Error: traces.json not found in $folderOriginal/$id/"

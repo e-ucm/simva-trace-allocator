@@ -14,43 +14,52 @@ outputError="true"
 if [ "$#" -eq 4 ]; then
     outputError=$4
 fi
+#Error in exec
 result=1
 if [ ! -f "$folder1/$id/traces.json" ]; then
     if [ -f "$folder2/$id/traces.json" ]; then
         # checking File size = 0
         if [[ ! -s "$folder2/$id/traces.json" ]]; then
-            result=0 #identical
+            #identical
+            result=0
         else 
             if [[ $outputError == "true" ]]; then 
                 echo 1>&2 "Error: traces.json not found in $folder1/$id/"
             fi
-            result=4 #notfoundinfolder
+            #notfoundinfolder
+            result=4
         fi
     else
         if [[ $outputError == "true" ]]; then 
             echo 1>&2 "Error: traces.json not found in $folder1/$id/"
         fi
-        result=4 #notfoundinfolder
+        #notfoundinfolder
+        result=4
     fi
 else
     # Check if traces.json exists in the corresponding subfolder in the other folder
     if [ ! -f "$folder2/$id/traces.json" ]; then
         # checking File size = 0
         if [[ -f "$folder1/$id/traces.json" ]] && [[ ! -s "$folder1/$id/traces.json" ]]; then
-            result=0 #identical
+            #identical
+            result=0
         else 
             if [[ $outputError == "true" ]]; then 
                 echo 1>&2 "Error: traces.json not found in $folder2/$id/ but exits in $folder1/$id/traces.json."
             fi
-            result=5 #notfoundinfolderToCompare
+            #notfoundinfolderToCompare
+            result=5
         fi
     else
         # Compare contents of traces.json files and show differences
-        if cmp -s "$folder1/$id/traces.json" "$folder2/$id/traces.json"; then
-            result=0 #identical
+        diffoutput=$(diff -w -B "$folder1/$id/traces.json" "$folder2/$id/traces.json")
+        if [[ $diffoutput == "" ]]; then
+            #identical
+            result=0
         else
-            result=3 #different
-            diff "$folder1/$id/traces.json" "$folder2/$id/traces.json" > "$folder2/$id/diff.txt"
+            #different
+            result=3
+            $diffoutput > "$folder2/$id/diff.txt"
             if [[ $outputError == "true" ]]; then 
                 echo 1>&2 "Files in $folder1/$id/traces.json and $folder2/$id/traces.json are different: $folder2/$id/diff.txt"
             fi
