@@ -61,7 +61,6 @@ export class MinioClient {
     async listFiles(folder){
         logger.debug(folder);
         let objectsStream = this.#minio.listObjectsV2(this.#opts.bucket, folder, false);
-        logger.debug(objectsStream);
         /** @type {ListEntry[]} */
         const files = [];
         for await(const chunk of objectsStream) {
