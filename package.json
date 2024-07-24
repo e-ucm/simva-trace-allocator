@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "dotenv": "^16.3.1",
-    "minio": "7.0.16",
+    "minio": "8.0.1",
     "pino": "^8.16.2",
     "tinyduration": "^3.3.0",
     "wretch": "^2.7.0"

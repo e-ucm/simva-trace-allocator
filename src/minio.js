@@ -39,8 +39,6 @@ export class MinioClient {
      */
     constructor(opts) {
         this.#opts = opts;
-        // XXX used version of minio sdk do not have proper types
-        // @ts-ignore
         this.#minio = new Client({
             endPoint: opts.host,
             port: opts.port,
@@ -61,9 +59,8 @@ export class MinioClient {
      * @returns {Promise<ListEntry[]>}
      */
     async listFiles(folder){
-        // XXX used version of minio sdk do not have proper types
-        // @ts-ignore
-        let objectsStream = this.#minio.listObjects(this.#opts.bucket, folder, false);
+        logger.debug(folder);
+        let objectsStream = this.#minio.listObjectsV2(this.#opts.bucket, folder, false);
         /** @type {ListEntry[]} */
         const files = [];
         for await(const chunk of objectsStream) {
@@ -122,7 +119,7 @@ export class MinioClient {
      * @returns 
      */
     async getTraces(activityId){
-        return this.listFiles(`/${this.#opts.topics_dir}/${this.#opts.traces_topic}/_id=${activityId}/`);
+        return this.listFiles(`${this.#opts.topics_dir}/${this.#opts.traces_topic}/_id=${activityId}/`);
     }
 
     /**
@@ -149,9 +146,7 @@ export class MinioClient {
      * @returns {Promise<boolean>}
      */
     async fileExists(path) {
-        // XXX used version of minio sdk do not have proper types
-        // @ts-ignore
-        const objectsStream = await this.#minio.listObjects(this.#opts.bucket, path);
+        const objectsStream = await this.#minio.listObjectsV2(this.#opts.bucket, path);
         const iterator = objectsStream[Symbol.asyncIterator]();
         const nextValue = await iterator.next();
         return ! nextValue.done;
