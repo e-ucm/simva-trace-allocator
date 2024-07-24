@@ -120,7 +120,7 @@ export class MinioClient {
      * @returns 
      */
     async getTraces(activityId){
-        return this.listFiles(`${this.#opts.topics_dir}/${this.#opts.traces_topic}/_id=${activityId}/`);
+        return this.listFiles(`${this.#opts.traces_topic}/${this.#opts.topics_dir}/${this.#opts.traces_topic}/_id=${activityId}/`);
     }
 
     /**
