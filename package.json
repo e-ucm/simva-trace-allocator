@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node ./src/index.js",
+    "start": "node ./src-kafka/index.js",
     "start:debug": "node --nolazy --inspect-brk=0.0.0.0:9229 ./src/index.js"
   },
   "engines": {
@@ -13,6 +13,7 @@
   "dependencies": {
     "dotenv": "^16.3.1",
     "minio": "8.0.1",
+    "kafkajs":"^2.2.4",
     "pino": "^8.16.2",
     "tinyduration": "^3.3.0",
     "wretch": "^2.7.0"

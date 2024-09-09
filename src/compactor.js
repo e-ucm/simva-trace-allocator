@@ -1,6 +1,6 @@
 import { now, duration, formatDuration } from './utils/date.js';
 import { logger } from './logger.js';
-import { MinioClient } from './minio.js';
+import { MinioClient } from './minio.js'; 
 import { SimvaClient } from './simva.js';
 import { getState } from './state.js';
 import { createHash } from 'node:crypto';
@@ -92,7 +92,7 @@ export class Compactor {
 
         logger.info(`Known %d activities, received %d`, state.size, activities.length);
 
-        const usersDir = this.#opts.minio.users_dir;
+        const outputDir = this.#opts.minio.outputs_dir;
         const tracesFilename = this.#opts.minio.traces_file;
 
         this.status.total = activities.length;
@@ -113,13 +113,11 @@ export class Compactor {
             }
 
             let consistent = await activityState.checkConsistency();
-            for(const username of activityState.owners) {
-                const remotePath = `${usersDir}/${username}/${activityState.activityId}/${tracesFilename}`;
+            const remotePath = `${outputDir}/${activityState.activityId}/${tracesFilename}`;
                 if (! await this.#minio.fileExists(remotePath) ) {
-                    logger.warn('User \'%s\' compact file for activity \'%s\' not found: %s', username, activityState.activityId, remotePath);
+                    logger.warn('Compact file for activity \'%s\' not found: %s', activityState.activityId, remotePath);
                     consistent = false;
                 }
-            }
             if (!consistent) {
                 inconsistent.push(activity._id);
             }
@@ -129,8 +127,6 @@ export class Compactor {
         }
         logger.info('Start recovery');
         for(const activity of inconsistent) {
-            const activityState = state.get(activity);
-            await this.#updateOwners({_id: activity, owners: []}, activityState);
             await state.remove(activity);
         }
         await state.save();
@@ -161,7 +157,6 @@ export class Compactor {
                 activityState = await state.create(activity._id);
             }
 
-            await this.#updateOwners(activity, activityState);
             const updated = await this.#updateActivityTraces(activity, activityState);
             if (!updated) continue;
             await this.#distributeTraceToOwners(activity, activityState);
@@ -196,7 +191,6 @@ export class Compactor {
                     continue;
                 }
                 try {
-                    await this.#updateOwners({_id: activityId, owners: []}, activityState);
                     await state.remove(activityId);
                     logger.info('Activity removed: %s', activityId);
                 } catch(error) {
@@ -208,43 +202,6 @@ export class Compactor {
 
         // Garbage collect state files in activities
         await state.garbageCollect();
-    }
-
-    /**
-     * 
-     * @param {Activity} activity 
-     * @param {ActivityCompactionState} activityState 
-     */
-    async #updateOwners(activity, activityState) {
-        const diffOwners = diffArray(activityState.owners, activity.owners.sort());
-        // Remove files
-        if (diffOwners.removed.length > 0) {
-            const usersDir = this.#opts.minio.users_dir;
-            const tracesFilename = this.#opts.minio.traces_file;
-            if (this.#opts.removeDryRun) {
-                logger.info('DRY RUN - Removing owners [%s] for activity: %s', diffOwners.removed.join(', '), activity._id);
-                for(const removedOwner of diffOwners.removed) {
-                    const remotePath = `${usersDir}/${removedOwner}/${activityState.activityId}/${tracesFilename}`;
-                    logger.debug('DRY RUN - Removed remote file: %s', remotePath);
-                }   
-            } else {
-                logger.info('Removing owners [%s] for activity: %s', diffOwners.removed.join(', '), activity._id);
-                for(const removedOwner of diffOwners.removed) {
-                    const remotePath = `${usersDir}/${removedOwner}/${activityState.activityId}/${tracesFilename}`;
-                    await this.#minio.removeRemoteFile(remotePath);
-                    logger.debug('Removed remote file: %s', remotePath);
-                }    
-            }
-        }
-        // Update State
-        const updatedOwners = [];
-        for(const owner of activityState.owners) {
-            if (diffOwners.removed.indexOf(owner) === -1) {
-                updatedOwners.push(owner);
-            }
-        }
-
-        activityState.owners = updatedOwners.concat(diffOwners.added);
     }
 
     /**
@@ -290,31 +247,11 @@ export class Compactor {
      */
     async #distributeTraceToOwners(activity, activityState) {
         const localStatePath = activityState.localStatePath;
-        const usersDir = this.#opts.minio.users_dir;
+        const outputDir = this.#opts.minio.outputs_dir;
         const tracesFilename = this.#opts.minio.traces_file;
-        // DISABLE GENERATE JSON ARRAY
-        /*
-        const localJsonArrayStatePath = localStatePath.replace('-state.txt', '-jsonArray.txt');
-        // Read the input file
-        const inputLines = fs.readFileSync(localStatePath, 'utf-8').split('\n');
-        // Parse each line as JSON and collect into an array
-        const jsonArray = inputLines
-          .filter(line => line.trim() !== '') // Filter out empty lines
-          .map(line => JSON.parse(line));
-        // Write the array to the output file
-        const outputContent = `${JSON.stringify(jsonArray, null, 2)}`;
-        fs.writeFileSync(localJsonArrayStatePath, outputContent, 'utf-8');
-        console.log(`Conversion to a JSON Array completed. Output written to ${localJsonArrayStatePath}`);
-        for(const username of activityState.owners) {
-            const remotePath = `${usersDir}/${username}/${activityState.activityId}/${tracesFilename}`;
-            await this.#minio.copyToRemoteFile(localJsonArrayStatePath, remotePath);
-        }
-        */
-        for(const username of activityState.owners) {
-            const remotePath = `${usersDir}/${username}/${activityState.activityId}/${tracesFilename}`;
-            await this.#minio.copyToRemoteFile(localStatePath, remotePath);
-        }
-        logger.info(`Copied compacted file for activity %s to owners %s`, activity._id, activityState.owners.join(', '));
+        const remotePath = `${outputDir}/${activityState.activityId}/${tracesFilename}`;
+        await this.#minio.copyToRemoteFile(localStatePath, remotePath);
+        logger.info(`Copied compacted file for activity %s`, activity._id);
     }
 }
 

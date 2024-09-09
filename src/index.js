@@ -11,11 +11,26 @@ const MAX_WAIT_TIME_ON_EXIT = 30*1000;
 logger.debug('Current config: %o', config);
 
 let intervalId;
-if (!isInDebugMode()) {
-    intervalId = setInterval(run, config.refreshInterval);
-} else {
-    run();
+
+async function init() {
+    try {
+        // Run the compact function immediately at launch
+        logger.info('Running compactor at launch...');
+        await run();
+
+        // Set an interval to run compact periodically if not in debug mode
+        if (!isInDebugMode()) {
+            intervalId = setInterval(run, config.refreshInterval);
+        }
+
+        logger.info('Compactor initialized.');
+    } catch (error) {
+        logger.error('Error during compactor initialization:', error);
+    }
 }
+
+// Initialize the compactor at launch
+init();
 
 process.on('SIGTERM', () => {
     logger.info('SIGTERM signal received: terminating');
