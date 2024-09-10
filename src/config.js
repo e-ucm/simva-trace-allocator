@@ -14,6 +14,7 @@ import * as inspector from 'inspector';
  * @property {boolean} tryRecovery
  * @property {import('./minio.js').MinioOpts} minio
  * @property {import('./simva.js').SimvaOpts} simva
+ * @property {import('./kafka.js').KafkaOpts} kafka
  */
 
 /** @type {CompactorOptions} */
@@ -45,6 +46,12 @@ export const config = {
         port: process.env.SIMVA_PORT !== undefined ? parseInt(process.env.SIMVA_PORT) : undefined,
         username: process.env.SIMVA_USER || 'admin',
         password: process.env.SIMVA_PASSWORD || 'password',
+    },
+    kafka: {
+        clientId: process.env.SIMVA_KAFKA_CLIENTID || 'my-client-id',
+        brokers: [ process.env.SIMVA_KAFKA_BROKER ] || ['localhost:9092'],
+        groupId: process.env.SIMVA_KAFKA_GROUPID || 'my-group-id',
+        topic: process.env.SIMVA_KAFKA_MINIO_TOPIC || 'minio-events'
     }
 };
 

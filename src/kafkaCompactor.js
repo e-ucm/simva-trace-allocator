@@ -4,9 +4,6 @@ import { MinioClient } from './minio.js';
 import { KafkaClient } from './kafka.js';
 import { getState } from './state.js';
 import { createHash } from 'node:crypto';
-import { diffArray } from './utils/misc.js';
-import * as fs from 'fs';
-import path from 'path';
 
 /** @typedef {import('./config.js').CompactorOptions} CompactorOptions */
 /** @typedef {import('./state.js').ActivityCompactionState} ActivityCompactionState */
@@ -20,7 +17,7 @@ import path from 'path';
  * @property {Date} [startTime]
  */
 
-export class Compactor {
+export class KafkaCompactor {
     /**
      * @param {CompactorOptions} opts
      */
@@ -145,10 +142,10 @@ export class Compactor {
         }
     }
 
-/**
-     * 
-     * @param {Activity} activity 
+    /**
+     * Update Activity Traces
      * @param {ActivityCompactionState} activityState 
+     * @param {string} keyPath
      * @returns {Promise<boolean>} false if nothing new
      */
     async #updateActivityTraces(activityState, keyPath) {
@@ -163,7 +160,11 @@ export class Compactor {
         await activityState.update(filesToAdd, nowDate, sha1);
         return true;
     }
-
+    
+    /**
+     * Distribute trace 
+     * @param {ActivityCompactionState} activityState 
+     */
     async #distributeTrace(activityState) {
         const localStatePath = activityState.localStatePath;
         const outputDir = this.#opts.minio.outputs_dir;
@@ -182,5 +183,22 @@ export class Compactor {
     */
     createSha1() {
         return createHash('sha1');
+    }
+
+
+    /**
+    * Get MinioClient 
+    * @returns {MinioClient} client
+    */
+    getMinioClient() {
+        return this.#minio;
+    }
+
+    /**
+    * Get MinioClient 
+    * @returns {CompactorOptions} options
+    */
+    getOpts() {
+        return this.#opts;
     }
 }
