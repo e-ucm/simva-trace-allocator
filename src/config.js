@@ -3,6 +3,7 @@ import * as inspector from 'inspector';
 
 /**
  * @typedef CompactorOptions
+ * @property {string} concatEventPolicy 
  * @property {number} batchSize
  * @property {number} maxDelay
  * @property {number} refreshInterval
@@ -19,6 +20,7 @@ import * as inspector from 'inspector';
 
 /** @type {CompactorOptions} */
 export const config = {
+    concatEventPolicy: process.env.CONCAT_EVENT_POLICY || 'true', // if true minio-events else previous version of trace allocator
     batchSize: process.env.BATCH_SIZE !== undefined ? parseInt(process.env.BATCH_SIZE) : 500,
     maxDelay: process.env.MAX_DELAY !== undefined ? parseInt(process.env.MAX_DELAY) : 5*60*1000,
     refreshInterval: process.env.REFRESH_INTERVAL !== undefined ? parseInt(process.env.REFRESH_INTERVAL) : 10*60*1000,
