@@ -11,11 +11,15 @@ const run = compactor.compact.bind(compactor);
 
 const MAX_WAIT_TIME_ON_EXIT = 30*1000;
 
-logger.debug('Current config: %o', config);
-
 let intervalId;
 
 if (config.concatEventPolicy === "true") {
+    await startKafkaProcess();
+} else {
+    await startPrevVersionProcess();
+}
+
+async function startKafkaProcess() {
     let state = await getState(compactor.getOpts(), compactor.getMinioClient());
 
     if(state.size === 0) {
@@ -33,7 +37,9 @@ if (config.concatEventPolicy === "true") {
     (async () => {
         await compactor.startKafkaConsumer();
     })();
-} else {
+}
+
+async function startPrevVersionProcess() {
     try {
         // Run the compact function immediately at launch
         logger.info('Running compactor at launch...');
@@ -51,7 +57,6 @@ if (config.concatEventPolicy === "true") {
         logger.error('Error during compactor initialization:', error);
     }
 }
-
 process.on('SIGTERM', () => {
     logger.info('SIGTERM signal received: terminating');
     if (intervalId !== undefined) {
