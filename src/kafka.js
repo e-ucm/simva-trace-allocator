@@ -15,7 +15,7 @@ export class KafkaClient {
         this.brokers = brokers;
         this.groupId = groupId;
         this.topic = topic;
-        this.kafka = new Kafka({ logLevel: logLevel.DEBUG, clientId: this.clientId, brokers: this.brokers });
+        this.kafka = new Kafka({ logLevel: logLevel.INFO, clientId: this.clientId, brokers: this.brokers });
         this.consumer = this.kafka.consumer({ groupId: this.groupId });
     }
 

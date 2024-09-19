@@ -5,7 +5,7 @@ import { SimvaClient } from './simva.js';
 import { KafkaClient } from './kafka.js';
 import { getState } from './state.js';
 import { createHash } from 'node:crypto';
-import { diffArray } from './utils/misc.js';
+import { binarySearch, diffArray } from './utils/misc.js';
 
 /** @typedef {import('./config.js').CompactorOptions} CompactorOptions */
 /** @typedef {import('./simva.js').Activity} Activity */
@@ -267,7 +267,8 @@ export class Compactor {
             logger.info(message.value);
 
             let state = await getState(this.#opts, this.#minio);
-            
+            let activities = await this.#simva.getActivities({ type: ['gameplay', 'miniokafka', 'rageminio'] });
+            await this.#garbageCollectActivities(state, activities);
             // Set up the delimiter and the required bucket and path values
             let delimiter = '/';
             let bucket = this.#opts.minio.bucket;
@@ -315,11 +316,39 @@ export class Compactor {
                     activityState = await state.create(activityId);
                 }
                 logger.info(activityState);
-                await this.#updateActivityTracesFromPath(activityState, keyWithoutBucket);
-                logger.info(activityState);
-                await this.#distributeTrace(activityState);
-                logger.info(activityState);
-                await state.save();
+                // compute which files need to be appended
+                const activityFiles = (await activityState.files()).sort();
+                logger.info(activityFiles);
+                
+                if(activityFiles.includes(keyWithoutBucket)) {
+                    logger.warn("Already consumed.")
+                } else {
+                    try {
+                        let positionvalue=-binarySearch(activityFiles, keyWithoutBucket, true, (a,b)=> { 
+                            if(typeof a == "string" && typeof b == "string" ) {
+                                return a.localeCompare(b); 
+                            } else {
+                                return -1;
+                            }
+                        })-1;
+                        var nextposition=activityFiles.length;
+                        logger.info(keyWithoutBucket);
+                        logger.info("positionvalue:");
+                        logger.info(positionvalue);
+                        logger.info("nextposition:");
+                        logger.info(nextposition);
+                        if(positionvalue < nextposition) {
+                            logger.warn("Not ordered. Should have been consumed before.")
+                        }
+                        await this.#updateActivityTracesFromPath(activityState, keyWithoutBucket);
+                        logger.info(activityState);
+                        await this.#distributeTrace(activityState);
+                        logger.info(activityState);
+                        await state.save();
+                    } catch(e) {
+                        logger.info(e);
+                    }
+                }
             } else {
                 logger.warn('Key format is unexpected. Unable to extract activityId and filename.');
             }
