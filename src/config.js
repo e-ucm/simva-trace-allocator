@@ -3,6 +3,7 @@ import * as inspector from 'inspector';
 
 /**
  * @typedef CompactorOptions
+ * @property {string} concatEventPolicy 
  * @property {number} batchSize
  * @property {number} maxDelay
  * @property {number} refreshInterval
@@ -14,10 +15,12 @@ import * as inspector from 'inspector';
  * @property {boolean} tryRecovery
  * @property {import('./minio.js').MinioOpts} minio
  * @property {import('./simva.js').SimvaOpts} simva
+ * @property {import('./kafka.js').KafkaOpts} kafka
  */
 
 /** @type {CompactorOptions} */
 export const config = {
+    concatEventPolicy: process.env.CONCAT_EVENT_POLICY || 'true', // if true minio-events else previous version of trace allocator
     batchSize: process.env.BATCH_SIZE !== undefined ? parseInt(process.env.BATCH_SIZE) : 500,
     maxDelay: process.env.MAX_DELAY !== undefined ? parseInt(process.env.MAX_DELAY) : 5*60*1000,
     refreshInterval: process.env.REFRESH_INTERVAL !== undefined ? parseInt(process.env.REFRESH_INTERVAL) : 10*60*1000,
@@ -36,7 +39,7 @@ export const config = {
         bucket: process.env.MINIO_BUCKET || 'traces',
         topics_dir: process.env.MINIO_TOPICS_DIR || 'kafka-topics',
         traces_topic: process.env.MINIO_TRACES_TOPIC || 'traces',
-        users_dir: process.env.MINIO_USERS_DIR || 'users',
+        outputs_dir: process.env.MINIO_OUTPUTS_DIR || 'outputs',
         traces_file: process.env.MINIO_TRACES_FILE || 'traces_v2.json',
     },
     simva: {
@@ -45,6 +48,12 @@ export const config = {
         port: process.env.SIMVA_PORT !== undefined ? parseInt(process.env.SIMVA_PORT) : undefined,
         username: process.env.SIMVA_USER || 'admin',
         password: process.env.SIMVA_PASSWORD || 'password',
+    },
+    kafka: {
+        clientId: process.env.SIMVA_KAFKA_CLIENTID || 'my-client-id',
+        brokers: [ process.env.SIMVA_KAFKA_BROKER ] || ['localhost:9092'],
+        groupId: process.env.SIMVA_KAFKA_GROUPID || 'my-group-id',
+        topic: process.env.SIMVA_KAFKA_MINIO_TOPIC || 'minio-events'
     }
 };
 

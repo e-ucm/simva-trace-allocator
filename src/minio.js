@@ -11,7 +11,7 @@ import { logger } from './logger.js';
  * @property {string} bucket
  * @property {string} topics_dir
  * @property {string} traces_topic
- * @property {string} users_dir
+ * @property {string} outputs_dir
  * @property {string} traces_file
  */
 
@@ -97,7 +97,7 @@ export class MinioClient {
      * 
      * @param {string} remotePath 
      * @param {string} localPath
-     * @returns {Promise<FPutResult>}
+     * @returns {Promise<void>}
      */
 	async copyToRemoteFile(localPath, remotePath) {
         return this.#minio.fPutObject(this.#opts.bucket, remotePath, localPath);
@@ -134,7 +134,7 @@ export class MinioClient {
     /**
      * 
      * @param {string[]} paths 
-     * @returns {Promise<void>}
+     * @returns {Promise<any>}
      */
 	async removeRemoteFiles(paths) {
         return this.#minio.removeObjects(this.#opts.bucket, paths);
@@ -146,7 +146,7 @@ export class MinioClient {
      * @returns {Promise<boolean>}
      */
     async fileExists(path) {
-        const objectsStream = await this.#minio.listObjectsV2(this.#opts.bucket, path);
+        const objectsStream = this.#minio.listObjectsV2(this.#opts.bucket, path);
         const iterator = objectsStream[Symbol.asyncIterator]();
         const nextValue = await iterator.next();
         return ! nextValue.done;
@@ -154,12 +154,11 @@ export class MinioClient {
 
 }
 
-
 function streamToString(stream) {
 	const chunks = []
 	return new Promise((resolve, reject) => {
 		try {
-			stream.on('data', chunk => chunks.push(chunk))
+			stream.on('data', (chunk) => chunks.push(chunk))
 			stream.on('error', reject)
 			stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
 		} catch (e) {

@@ -12,7 +12,6 @@ import wretch from "wretch";
 /**
  * @typedef Activity
  * @property {string} _id
- * @property {string[]} owners
  */
 
 /**
@@ -23,7 +22,6 @@ import wretch from "wretch";
 function assertActivity(maybeActivity, checkTypes = false) {
 	if (typeof maybeActivity !== 'object') throw new Error('Not an Activity');
 	if (! ('_id' in maybeActivity)) throw new Error('Not an Activity');
-	if (! ('owners' in maybeActivity) || ! Array.isArray(maybeActivity.owners)) throw new Error('Not an Activity');
 }
 
 const APPLICATION_JSON_MIME_TYPE = 'application/json';

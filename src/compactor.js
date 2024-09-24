@@ -1,11 +1,11 @@
 import { now, duration, formatDuration } from './utils/date.js';
 import { logger } from './logger.js';
-import { MinioClient } from './minio.js';
+import { MinioClient } from './minio.js'; 
 import { SimvaClient } from './simva.js';
+import { KafkaClient } from './kafka.js';
 import { getState } from './state.js';
 import { createHash } from 'node:crypto';
-import { diffArray } from './utils/misc.js';
-import * as fs from 'fs';
+import { binarySearch, diffArray } from './utils/misc.js';
 
 /** @typedef {import('./config.js').CompactorOptions} CompactorOptions */
 /** @typedef {import('./simva.js').Activity} Activity */
@@ -28,6 +28,7 @@ export class Compactor {
         this.#opts = opts;
         this.#minio = new MinioClient(opts.minio);
         this.#simva = new SimvaClient(opts.simva);
+        this.#kafka = new KafkaClient(opts.kafka);
         this.shouldExit = false;
         this.status = {
             processing: false,
@@ -41,6 +42,9 @@ export class Compactor {
 
     /** @type {MinioClient} */
     #minio;
+
+    /** @type {KafkaClient} */
+    #kafka;
 
     /** @type {SimvaClient} */
     #simva;
@@ -84,7 +88,7 @@ export class Compactor {
         const durationStr = formatDuration(duration(this.status.startTime, nowDate));
         return durationStr;
     }
-
+    
     async #checkConsistency() {
         let state = await getState(this.#opts, this.#minio);
 
@@ -92,7 +96,7 @@ export class Compactor {
 
         logger.info(`Known %d activities, received %d`, state.size, activities.length);
 
-        const usersDir = this.#opts.minio.users_dir;
+        const outputDir = this.#opts.minio.outputs_dir;
         const tracesFilename = this.#opts.minio.traces_file;
 
         this.status.total = activities.length;
@@ -113,13 +117,11 @@ export class Compactor {
             }
 
             let consistent = await activityState.checkConsistency();
-            for(const username of activityState.owners) {
-                const remotePath = `${usersDir}/${username}/${activityState.activityId}/${tracesFilename}`;
+            const remotePath = `${outputDir}/${activityState.activityId}/${tracesFilename}`;
                 if (! await this.#minio.fileExists(remotePath) ) {
-                    logger.warn('User \'%s\' compact file for activity \'%s\' not found: %s', username, activityState.activityId, remotePath);
+                    logger.warn('Compact file for activity \'%s\' not found: %s', activityState.activityId, remotePath);
                     consistent = false;
                 }
-            }
             if (!consistent) {
                 inconsistent.push(activity._id);
             }
@@ -129,8 +131,6 @@ export class Compactor {
         }
         logger.info('Start recovery');
         for(const activity of inconsistent) {
-            const activityState = state.get(activity);
-            await this.#updateOwners({_id: activity, owners: []}, activityState);
             await state.remove(activity);
         }
         await state.save();
@@ -161,10 +161,9 @@ export class Compactor {
                 activityState = await state.create(activity._id);
             }
 
-            await this.#updateOwners(activity, activityState);
-            const updated = await this.#updateActivityTraces(activity, activityState);
+            const updated = await this.#updateActivityTraces(activityState);
             if (!updated) continue;
-            await this.#distributeTraceToOwners(activity, activityState);
+            await this.#distributeTrace(activityState);
 
             if (activities.length % 5) {
                 await state.save();
@@ -196,7 +195,6 @@ export class Compactor {
                     continue;
                 }
                 try {
-                    await this.#updateOwners({_id: activityId, owners: []}, activityState);
                     await state.remove(activityId);
                     logger.info('Activity removed: %s', activityId);
                 } catch(error) {
@@ -212,49 +210,11 @@ export class Compactor {
 
     /**
      * 
-     * @param {Activity} activity 
-     * @param {ActivityCompactionState} activityState 
-     */
-    async #updateOwners(activity, activityState) {
-        const diffOwners = diffArray(activityState.owners, activity.owners.sort());
-        // Remove files
-        if (diffOwners.removed.length > 0) {
-            const usersDir = this.#opts.minio.users_dir;
-            const tracesFilename = this.#opts.minio.traces_file;
-            if (this.#opts.removeDryRun) {
-                logger.info('DRY RUN - Removing owners [%s] for activity: %s', diffOwners.removed.join(', '), activity._id);
-                for(const removedOwner of diffOwners.removed) {
-                    const remotePath = `${usersDir}/${removedOwner}/${activityState.activityId}/${tracesFilename}`;
-                    logger.debug('DRY RUN - Removed remote file: %s', remotePath);
-                }   
-            } else {
-                logger.info('Removing owners [%s] for activity: %s', diffOwners.removed.join(', '), activity._id);
-                for(const removedOwner of diffOwners.removed) {
-                    const remotePath = `${usersDir}/${removedOwner}/${activityState.activityId}/${tracesFilename}`;
-                    await this.#minio.removeRemoteFile(remotePath);
-                    logger.debug('Removed remote file: %s', remotePath);
-                }    
-            }
-        }
-        // Update State
-        const updatedOwners = [];
-        for(const owner of activityState.owners) {
-            if (diffOwners.removed.indexOf(owner) === -1) {
-                updatedOwners.push(owner);
-            }
-        }
-
-        activityState.owners = updatedOwners.concat(diffOwners.added);
-    }
-
-    /**
-     * 
-     * @param {Activity} activity 
      * @param {ActivityCompactionState} activityState 
      * @returns {Promise<boolean>} false if nothing new
      */
-    async #updateActivityTraces(activity, activityState) {
-        let traceFiles = (await this.#minio.getTraces(activity._id)).map((o) => o.name);
+    async #updateActivityTraces(activityState) {
+        let traceFiles = (await this.#minio.getTraces(activityState.activityId)).map((o) => o.name);
         traceFiles.sort();
         const hash = createSha1();
         for(const traceFile of traceFiles) {
@@ -263,7 +223,7 @@ export class Compactor {
         }
         const sha1 = hash.digest('hex');
         if (sha1 === activityState.currentSha1) {
-            logger.debug(`Nothing to do for activity %s`, activity._id);
+            logger.debug(`Nothing to do for activity %s`, activityState.activityId);
             return false;
         }
 
@@ -274,47 +234,184 @@ export class Compactor {
         const elapsedTime = duration(activityState.lastUpdate, nowDate);
         if (filesToAdd.length < this.#opts.batchSize && elapsedTime < this.#opts.maxDelay) {
             const durationStr = formatDuration(elapsedTime);
-            logger.debug(`Update postponed elapsedTime=%s, batchSize=%d for activity %s`, durationStr, filesToAdd.length, activity._id);
+            logger.debug(`Update postponed elapsedTime=%s, batchSize=%d for activity %s`, durationStr, filesToAdd.length, activityState.activityId);
             return false;
         }
 
-        logger.info(`Compacting activity %s`, activity._id);
+        logger.info(`Compacting activity %s`, activityState.activityId);
         await activityState.update(filesToAdd, nowDate, sha1);
         return true;
     }
 
     /**
-     * 
-     * @param {Activity} activity 
+     * Distribute trace 
      * @param {ActivityCompactionState} activityState 
      */
-    async #distributeTraceToOwners(activity, activityState) {
+    async #distributeTrace(activityState) {
         const localStatePath = activityState.localStatePath;
-        const usersDir = this.#opts.minio.users_dir;
+        const outputDir = this.#opts.minio.outputs_dir;
         const tracesFilename = this.#opts.minio.traces_file;
-        // DISABLE GENERATE JSON ARRAY
-        /*
-        const localJsonArrayStatePath = localStatePath.replace('-state.txt', '-jsonArray.txt');
-        // Read the input file
-        const inputLines = fs.readFileSync(localStatePath, 'utf-8').split('\n');
-        // Parse each line as JSON and collect into an array
-        const jsonArray = inputLines
-          .filter(line => line.trim() !== '') // Filter out empty lines
-          .map(line => JSON.parse(line));
-        // Write the array to the output file
-        const outputContent = `${JSON.stringify(jsonArray, null, 2)}`;
-        fs.writeFileSync(localJsonArrayStatePath, outputContent, 'utf-8');
-        console.log(`Conversion to a JSON Array completed. Output written to ${localJsonArrayStatePath}`);
-        for(const username of activityState.owners) {
-            const remotePath = `${usersDir}/${username}/${activityState.activityId}/${tracesFilename}`;
-            await this.#minio.copyToRemoteFile(localJsonArrayStatePath, remotePath);
+        const remotePath = `${outputDir}/${activityState.activityId}/${tracesFilename}`;
+        await this.#minio.copyToRemoteFile(localStatePath, remotePath);
+        logger.info(`Copied compacted file for activity %s`, activityState.activityId);
+    }
+
+    // Method to process messages (acts as the callback for KafkaClient)
+    /**
+     * @param {any} message
+     */
+    async processMessage(message) {
+        try {
+            // Log the received message
+            logger.info('Received message:');
+            logger.info(message.value);
+
+            let state = await getState(this.#opts, this.#minio);
+            let activities = await this.#simva.getActivities({ type: ['gameplay', 'miniokafka', 'rageminio'] });
+            await this.#garbageCollectActivities(state, activities);
+            // Set up the delimiter and the required bucket and path values
+            let delimiter = '/';
+            let bucket = this.#opts.minio.bucket;
+            
+            // Build the path to traces topic
+            let tracestopicspath = `${this.#opts.minio.topics_dir}${delimiter}${this.#opts.minio.traces_topic}${delimiter}_id=`;
+        
+            // Log the constructed path
+            logger.info(`Trace topic path: ${tracestopicspath}`);
+        
+            // Parse the message value (assuming it's a JSON string)
+            let ev = JSON.parse(message.value);
+            let key = ev.Key;
+            
+            // Log the key extracted from the message
+            logger.info(`Received Key: ${key}`);
+        
+            // Remove the bucket and trace topic path from the key to get the key value
+            let keyvalue = key.replace(`${bucket}${delimiter}${tracestopicspath}`, "");
+            
+            // Log the key value after removal
+            logger.info(`Key value without bucket and path: ${keyvalue}`);
+        
+            // Split the key value to extract activityId and filename
+            let added = keyvalue.split(delimiter);
+            
+            // Initialize variables for activityId and filename
+            let activityId = null;
+            let filename = null;
+            let keyWithoutBucket = null;
+        
+            // If the split key has exactly 2 parts, extract activityId and filename
+            if (added.length === 2) {
+                activityId = added[0];
+                filename = added[1];
+                keyWithoutBucket = `${tracestopicspath}${activityId}${delimiter}${filename}`;
+
+                // Log the extracted values
+                logger.info(`activityId: ${activityId}, filename: ${filename}, key: ${key}, keyWithoutBucket: ${keyWithoutBucket}`);
+                
+                // ActivityState
+                let activityState = state.get(activityId);
+                if (activityState === undefined) {
+                    logger.info(`New activity: %s`, activityId);
+                    activityState = await state.create(activityId);
+                }
+                logger.info(activityState);
+                // compute which files need to be appended
+                const activityFiles = (await activityState.files()).sort();
+                logger.info(activityFiles);
+                
+                if(activityFiles.includes(keyWithoutBucket)) {
+                    logger.warn("Already consumed.")
+                } else {
+                    try {
+                        let positionvalue=-binarySearch(activityFiles, keyWithoutBucket, true, (a,b)=> { 
+                            if(typeof a == "string" && typeof b == "string" ) {
+                                return a.localeCompare(b); 
+                            } else {
+                                return -1;
+                            }
+                        })-1;
+                        var nextposition=activityFiles.length;
+                        logger.info(keyWithoutBucket);
+                        logger.info("positionvalue:");
+                        logger.info(positionvalue);
+                        logger.info("nextposition:");
+                        logger.info(nextposition);
+                        if(positionvalue < nextposition) {
+                            logger.warn("Not ordered. Should have been consumed before.")
+                        }
+                        await this.#updateActivityTracesFromPath(activityState, keyWithoutBucket);
+                        logger.info(activityState);
+                        await this.#distributeTrace(activityState);
+                        logger.info(activityState);
+                        await state.save();
+                    } catch(e) {
+                        logger.info(e);
+                    }
+                }
+            } else {
+                logger.warn('Key format is unexpected. Unable to extract activityId and filename.');
+            }
+        } catch(e) {
+            logger.debug('Error processing message:');
+            logger.debug(e);
         }
-        */
-        for(const username of activityState.owners) {
-            const remotePath = `${usersDir}/${username}/${activityState.activityId}/${tracesFilename}`;
-            await this.#minio.copyToRemoteFile(localStatePath, remotePath);
+    }
+     
+    /**
+     * Update Activity Traces From Path
+     * @param {ActivityCompactionState} activityState 
+     * @param {string} keyPath
+     * @returns {Promise<boolean>} false if nothing new
+     */
+    async #updateActivityTracesFromPath(activityState, keyPath) {
+        const hash = createSha1();
+        hash.update(keyPath);
+        hash.update('\n');
+        const sha1 = hash.digest('hex');
+        const nowDate = now();
+        const filesToAdd = [keyPath];
+        logger.info(`Compacting activity %s`, activityState.activityId);
+        logger.info(filesToAdd);
+        await activityState.update(filesToAdd, nowDate, sha1);
+        return true;
+    }
+
+    // Method to start consuming messages using KafkaClient
+    async startKafkaConsumer() {
+        try {
+            logger.info('Compactor starting Kafka consumption...');
+            // Start Kafka consumption and pass the processMessage as a callback
+            await this.#kafka.consumeLatestMessages(this.processMessage.bind(this));
+        } catch (error) {
+            console.error('Error starting Compactor:', error);
         }
-        logger.info(`Copied compacted file for activity %s to owners %s`, activity._id, activityState.owners.join(', '));
+    }
+
+    // Method to stop consuming messages
+    async stopKafkaConsumer() {
+        try {
+            await this.#kafka.disconnect();
+            logger.info('Compactor stopped Kafka consumption.');
+        } catch (error) {
+            console.error('Error stopping Compactor:', error);
+        }
+    }
+    
+    /**
+    * Get MinioClient 
+    * @returns {MinioClient} client
+    */
+    getMinioClient() {
+        return this.#minio;
+    }
+    
+    /**
+    * Get CompactorOptions 
+    * @returns {CompactorOptions} options
+    */
+    getOpts() {
+        return this.#opts;
     }
 }
 
