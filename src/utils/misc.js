@@ -80,15 +80,16 @@ export function diffSet(s1, s2) {
  * @template T
  * @param {T[]} array 
  * @param {T} value
+ * @param {boolean} findPosition
  * @param {(a:T, b:T) => number} [comparator]
  * 
  * @returns
  */
-export function binarySearch(array, value, comparator) {
+export function binarySearch(array, value, findPosition, comparator) {
     if (array.length === 0) return -1;
 
     comparator = comparator || ((a, b) => Number(a) - Number(b));
-    return recursiveBinarySearch(array, value, 0, array.length, comparator);
+    return recursiveBinarySearch(array, value, 0, array.length, findPosition, comparator);
 }
 
 /**
@@ -97,14 +98,20 @@ export function binarySearch(array, value, comparator) {
  * @param {T} value
  * @param {number} start
  * @param {number} end
+ * @param {boolean} findPosition
  * @param {(a:T, b:T) => number} [comparator]
  * 
  * @returns
  */
-export function recursiveBinarySearch(array, value, start, end, comparator) {
+export function recursiveBinarySearch(array, value, start, end, findPosition, comparator) {
       
     // Base Condition
-    if (start > end) return -1;
+    if(findPosition) {
+        if (start > end) return -start-1;
+    } else {
+        if (start > end) return -1;
+    }
+    
   
     // Find the middle index
     const mid = Math.floor((start + end)/2);
@@ -113,7 +120,7 @@ export function recursiveBinarySearch(array, value, start, end, comparator) {
     const comparation = comparator(array[mid], value);
     
     if (comparation === 0) return mid;     
-    if (comparation > 0) return recursiveBinarySearch(array, value, start, mid-1, comparator);
+    if (comparation > 0) return recursiveBinarySearch(array, value, start, mid-1,findPosition, comparator);
     
-    return recursiveBinarySearch(array, value, mid+1, end, comparator);
+    return recursiveBinarySearch(array, value, mid+1, end, findPosition, comparator);
 }
