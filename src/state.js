@@ -2,6 +2,7 @@ import { MinioClient } from './minio.js';
 import { logger } from './logger.js';
 import { join } from 'node:path';
 import { copyNoOverwrite, ensureDirectoryStructureExists, fileExists, forceRemove, listFiles, mktempPath, rename, withFile } from './utils/file.js';
+import { areArraysEqual, isStringArray, getFirstAndLastX } from './utils/array.js';
 import { duration, epoch, formatDuration, now, parseDate } from './utils/date.js';
 import { diffArray, diffSet } from './utils/misc.js';
 
@@ -70,37 +71,93 @@ export class ActivityCompactionState {
 
 	async garbageCollect() {
 		if (this.currentSha1 === undefined) {
-			return;
+			return 0;
 		}
 		const localHashesAndFiles = await this.#listLocalHashes();
 		const remoteHashesAndFiles = await this.#listRemoteHashes();
-
+		localHashesAndFiles.forEach((value, key) => {
+			logger.debug(`${key}: ${value.join(", ")}`);
+		});
+		remoteHashesAndFiles.forEach((value, key) => {
+			logger.debug(`${key}: ${value.join(", ")}`);
+		});
 		const localHashes = new Set(localHashesAndFiles.keys());
 		const remoteHashes = new Set(remoteHashesAndFiles.keys());
 		const setsDiff = diffSet(localHashes, remoteHashes);
-		if (setsDiff.added.length > 0 || setsDiff.removed.length > 0) {
-			logger.warn('Local and remote folders for activity not synced, garbage collection skipped: %s', this.activityId);
-			return;
-		}
-
+		logger.debug(setsDiff);
 		/** @type {string[]} */
 		let localFilesToRemove = [];
 		/** @type {string[]} */
 		let remoteFilesToRemove = [];
+		if (setsDiff.added.length > 0 || setsDiff.removed.length > 0) {
+			logger.warn('Local and remote folders for activity not synced for activity %s', this.activityId);
+			if(setsDiff.added.includes(this.currentSha1)) {
+				logger.warn('%s current local file not present: %s', this.currentSha1, this.activityId);
+				logger.info('garbage collection skipped: %s', this.activityId);
+				return;
+				//this.#minio.copyFromRemoteFile(this.#filesStateRemotePath(), this.#filesStateLocalPath());
+				//this.#minio.copyFromRemoteFile(this.#stateRemotePath(), this.#stateLocalPath());
+				//setsDiff.added= setsDiff.added.filter(sha1 => (sha1 !== this.currentSha1));
+			} else if(setsDiff.removed.includes(this.currentSha1)) {
+				logger.warn('%s current remote file not present: %s', this.currentSha1, this.activityId);
+				logger.info('garbage collection skipped: %s', this.activityId);
+				return;
+				//this.#minio.copyToRemoteFile(this.#filesStateLocalPath(), this.#filesStateRemotePath());
+				//this.#minio.copyToRemoteFile(this.#stateLocalPath(), this.#stateRemotePath());
+				//setsDiff.removed= setsDiff.removed.filter(sha1 => (sha1 !== this.currentSha1));
+			} else {
+				let localFileContent= (await this.#loadLocalState());
+				localFileContent.push("");
+				logger.debug("localFileContent:");
+				logger.debug(getFirstAndLastX(localFileContent, 3));
+				let remoteFileContent= (await this.#minio.getFile(this.#stateRemotePath())).split('\n');
+				logger.debug("remoteFileContent:");
+				logger.debug(getFirstAndLastX(remoteFileContent, 3));
+				if(areArraysEqual(localFileContent, remoteFileContent)) {
+					logger.info("Local file is the same that the remote file.");
+ 				} else {
+					logger.warn("Remote file is different that the local file.");
+					logger.warn('garbage collection skipped: %s', this.activityId);
+					return;
+					//this.#minio.copyFromRemoteFile(this.#filesStateRemotePath(), this.#filesStateLocalPath());
+					//this.#minio.copyFromRemoteFile(this.#stateRemotePath(), this.#stateLocalPath());
+				}
+			}
+			if(setsDiff.added.length > 0) {
+				setsDiff.added.forEach((hash) => {
+					const remoteFiles = remoteHashesAndFiles.get(hash);
+					if(isStringArray(remoteFiles)) {
+						remoteFilesToRemove = remoteFilesToRemove.concat(remoteFiles);
+					}
+				});
+			}
+
+			if(setsDiff.removed.length > 0) {
+				setsDiff.removed.forEach((hash) => {
+					const localFiles = localHashesAndFiles.get(hash);
+					if(isStringArray(localFiles)) {
+						localFilesToRemove = localFilesToRemove.concat(localFiles);
+					}
+				});
+			}
+		}
+
 		localHashes.forEach((hash) => {
 			if(hash !== this.currentSha1) {
 				const localFiles = localHashesAndFiles.get(hash);
-				localFilesToRemove = localFilesToRemove.concat(localFiles);
+				if(isStringArray(localFiles)) {
+					localFilesToRemove = localFilesToRemove.concat(localFiles);
+				}
 				const remoteFiles = remoteHashesAndFiles.get(hash);
-				remoteFilesToRemove = remoteFilesToRemove.concat(remoteFiles);
+				if(isStringArray(remoteFiles)) {
+					remoteFilesToRemove = remoteFilesToRemove.concat(remoteFiles);
+				}
 			}
 		});
-		setsDiff.added.forEach((hash) => {
-			const remoteFiles = remoteHashesAndFiles.get(hash);
-			remoteFilesToRemove = remoteFilesToRemove.concat(remoteFiles);
-		});
+		
 		await this.#removeRemoteFiles(remoteFilesToRemove);
 		await this.#removeLocalFiles(localFilesToRemove);
+		return 0;
 	}
 
 	/**
@@ -113,13 +170,14 @@ export class ActivityCompactionState {
 		const activityPath = join(this.#opts.localStatePath, this.activityId);
 		const files = await listFiles(activityPath);
 		for(const file of files) {
+			const filePath= join(activityPath, file);
 			const chunks = file.split('-');
 			const hash = chunks[0];
 			const entry = hashes.get(hash);
 			if (entry) {
-				entry.push(file);
+				entry.push(filePath);
 			} else {
-				hashes.set(hash, [file]);
+				hashes.set(hash, [filePath]);
 			}
 		}
 		if (this.currentSha1 !== undefined && hashes.size < 2 ) {
@@ -139,7 +197,7 @@ export class ActivityCompactionState {
 		const files = await this.#minio.listFiles(remotePath);
 		for(const file of files) {
 			const chunks = file.name.split('-');
-			const hash = chunks[0];
+			const hash = chunks[0].replace(remotePath, "");
 			const entry = hashes.get(hash);
 			if (entry) {
 				entry.push(file.name);
@@ -155,7 +213,6 @@ export class ActivityCompactionState {
 	 * @param {string[]} files 
 	 */
 	async #removeRemoteFiles(files) {
-		files = files.map((file) => `${this.#opts.remoteStatePath}/${this.activityId}/${file}`);
 		if (this.#opts.removeDryRun) {
 			logger.debug('DRY RUN - Removed remote files:\n %s', files.join(',\n'));
 		} else {
@@ -170,12 +227,11 @@ export class ActivityCompactionState {
 	 */
 	async #removeLocalFiles(files) {
 		for(const file of files) {
-			const localPath = join(this.#opts.localStatePath, this.activityId, file);
 			if (this.#opts.removeDryRun) {
-				logger.debug('DRY RUN - Removed local file: %s', localPath);
+				logger.debug('DRY RUN - Removed local file: %s', file);
 			} else {
-				await forceRemove(localPath);
-				logger.debug('Removed local file: %s', localPath);
+				await forceRemove(file);
+				logger.debug('Removed local file: %s', file);
 			}
 		}
 	}
@@ -294,6 +350,28 @@ export class ActivityCompactionState {
 			}
 		});
 		await rename(tmpPath, statePath, this.#opts.copyInsteadRename);
+	}
+
+
+	/**
+	 * 
+	 * @returns 
+	 */
+	async #loadLocalState() {
+		const statePath = this.#stateLocalPath();
+		const withState = withFile(statePath);
+
+		/** @type {string[]} */
+		const files = await withState(async (state) => {
+			/** @type {string[]} */
+			const files=[];
+			for await (const line of state.readLines()) {
+				files.push(line);
+			}
+			return files;
+		}, false);
+
+		return files;
 	}
 
 	/**
@@ -445,17 +523,32 @@ export class CompactorState {
 	}
 
 	async garbageCollect() {
+        let activityToPass=[];
 		const nowDate = now();
 		const lastGC = this.#lastGC ?? epoch();
 		const elapsedTimeSinceLastGC = duration(lastGC, nowDate);
 		if (elapsedTimeSinceLastGC < this.#opts.gcInterval) {
-			return;
+			return [];
 		}
 
 		logger.debug('Garbage collection started');
 		for(const activity of this.#states.values()) {
 			try {
-				await activity.garbageCollect();
+				let result = await activity.garbageCollect();
+				logger.info("activity.garbageCollect : " + result);
+				switch(result) {
+					case 1:
+						logger.warn("Error during garbage collection.");
+						if(this.#opts.tryRecovery) {
+							logger.warn("Removing activity :" + activity.activityId);
+							await activity.clear();
+							await this.remove(activity.activityId);
+						}
+						activityToPass.push(activity.activityId);
+						break;
+					default:
+						logger.info("Everything ok during garbage collection.");		 
+				}
 			} catch (error) {
 				logger.error('Could not garbage collect: %s', activity.activityId);
 				logger.error(error);
@@ -464,6 +557,7 @@ export class CompactorState {
 		const finishTime = now();
 		logger.info('Garbage collection finished, took: %s', formatDuration(duration(nowDate, finishTime)));
 		this.#lastGC = finishTime;
+		return activityToPass;
 	}
 
 	/**

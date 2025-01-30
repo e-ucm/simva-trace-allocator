@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import * as inspector from 'inspector';
+import ms from "ms";
 
 /**
  * @typedef CompactorOptions
@@ -22,12 +23,12 @@ import * as inspector from 'inspector';
 export const config = {
     concatEventPolicy: process.env.CONCAT_EVENT_POLICY || 'true', // if true minio-events else previous version of trace allocator
     batchSize: process.env.BATCH_SIZE !== undefined ? parseInt(process.env.BATCH_SIZE) : 500,
-    maxDelay: process.env.MAX_DELAY !== undefined ? parseInt(process.env.MAX_DELAY) : 5*60*1000,
-    refreshInterval: process.env.REFRESH_INTERVAL !== undefined ? parseInt(process.env.REFRESH_INTERVAL) : 10*60*1000,
+    maxDelay: process.env.MAX_DELAY !== undefined ? ms(process.env.MAX_DELAY) : ms("5min"),
+    refreshInterval: process.env.REFRESH_INTERVAL !== undefined ? ms(process.env.REFRESH_INTERVAL) : ms("10min"),
     localStatePath: process.env.LOCAL_STATE || new URL('../state', import.meta.url).pathname,
     remoteStatePath: process.env.REMOTE_STATE || 'state',
     removeDryRun: process.env.REMOVE_DRY_RUN !== undefined ? (process.env.REMOVE_DRY_RUN.toLocaleLowerCase() === 'false' ? false : true) : true,
-    gcInterval: process.env.GC_INTERVAL !== undefined ? parseInt(process.env.GC_INTERVAL) : 10*24*60*60*1000,
+    gcInterval: process.env.GC_INTERVAL !== undefined ? ms(process.env.GC_INTERVAL) : ms("2h"),
     copyInsteadRename: process.env.COPY_INSTEAD_RENAME !== undefined ? (process.env.COPY_INSTEAD_RENAME.toLocaleLowerCase() === 'false' ? false : true) : true,
     tryRecovery: process.env.TRY_RECOVERY !== undefined ? (process.env.TRY_RECOVERY.toLocaleLowerCase() === 'false' ? false : true) : false,
     minio: {
@@ -51,7 +52,7 @@ export const config = {
     },
     kafka: {
         clientId: process.env.SIMVA_KAFKA_CLIENTID || 'my-client-id',
-        brokers: [ process.env.SIMVA_KAFKA_BROKER ] || ['localhost:9092'],
+        brokers: process.env.SIMVA_KAFKA_BROKER !== undefined ?  [ process.env.SIMVA_KAFKA_BROKER ] : ['localhost:9092'],
         groupId: process.env.SIMVA_KAFKA_GROUPID || 'my-group-id',
         topic: process.env.SIMVA_KAFKA_MINIO_TOPIC || 'minio-events'
     }

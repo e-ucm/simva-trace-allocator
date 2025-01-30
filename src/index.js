@@ -1,9 +1,10 @@
 import { config, isInDebugMode } from './config.js';
 import { logger } from './logger.js';
-
+import cron from 'node-cron';
 import { Compactor } from './compactor.js';
 import { getState } from './state.js';
-
+import { convertTimeToCron } from "./utils/date.js";
+import "./profiling.js";
 logger.debug('Current config: %o', config);
 
 const compactor = new Compactor(config);
@@ -20,19 +21,15 @@ if (config.concatEventPolicy === "true") {
 }
 
 async function startKafkaProcess() {
-    let state = await getState(compactor.getOpts(), compactor.getMinioClient());
-
-    if(state.size === 0) {
-        try {
-            // Run the compact function immediately at launch
-            logger.info('Running compactor at launch...');
-            await run();
-            logger.info('Compactor initialized.');
-        } catch (error) {
-            logger.error('Error during compactor initialization:', error);
-        }
-    }
-
+    await compactor.processConsistencyAndGarbage();
+    // Schedule a task to run every x
+    let gcIntervalInMin=Math.round(config.gcInterval/(1000*60));
+    const cronTime = convertTimeToCron(gcIntervalInMin);
+    logger.info(cronTime);
+    cron.schedule(cronTime, async () => {
+        logger.info("Compactor starting process garbage scheduled task running every x minutes");
+        await compactor.processConsistencyAndGarbage();
+    });
     // Start consuming messages
     (async () => {
         await compactor.startKafkaConsumer();
@@ -56,35 +53,37 @@ async function startPrevVersionProcess() {
     } catch (error) {
         logger.error('Error during compactor initialization:', error);
     }
+    
+    process.on('SIGTERM', () => {
+        logger.info('SIGTERM signal received: terminating');
+        if (intervalId !== undefined) {
+            clearInterval(intervalId);
+        }
+        compactor.shouldExit = true;
+    });
+    
+    process.on('SIGINT', () => {
+        logger.info('SIGINT signal received');
+        if (intervalId !== undefined) {
+            clearInterval(intervalId);
+        }
+        compactor.shouldExit = true;
+        setTimeout(() => {
+            logger.info('Exiting');
+            process.exit();        
+        }, MAX_WAIT_TIME_ON_EXIT);
+    });
+    
+    
+    process.on('SIGUSR2',function(){
+        logger.info("SIGUSR2 signal received");
+        if (!compactor.status.processing) {
+            setImmediate(run);
+            logger.info(`Force run`);
+        }
+        const status = compactor.status;
+        const elapsedTime = compactor.elapsedTime;
+        logger.info(`Status: ${status.current} / ${status.total}, elapsedTime: ${elapsedTime}`);
+    });
+    
 }
-process.on('SIGTERM', () => {
-    logger.info('SIGTERM signal received: terminating');
-    if (intervalId !== undefined) {
-        clearInterval(intervalId);
-    }
-    compactor.shouldExit = true;
-});
-
-process.on('SIGINT', () => {
-    logger.info('SIGINT signal received');
-    if (intervalId !== undefined) {
-        clearInterval(intervalId);
-    }
-    compactor.shouldExit = true;
-    setTimeout(() => {
-        logger.info('Exiting');
-        process.exit();        
-    }, MAX_WAIT_TIME_ON_EXIT);
-});
-
-
-process.on('SIGUSR2',function(){
-    logger.info("SIGUSR2 signal received");
-    if (!compactor.status.processing) {
-        setImmediate(run);
-        logger.info(`Force run`);
-    }
-    const status = compactor.status;
-    const elapsedTime = compactor.elapsedTime;
-    logger.info(`Status: ${status.current} / ${status.total}, elapsedTime: ${elapsedTime}`);
-});

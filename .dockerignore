@@ -1,0 +1,5 @@
+node_modules/
+manual-scripts/
+.github
+Dockerfile
+.dockerignore
