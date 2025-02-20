@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import cron from 'node-cron';
 import { convertTimeToCron } from "./utils/date.js";
 import v8 from 'v8';
+import process from 'node:process';
 
 if(process.env.NODE_ENV == "development") {
   logger.info("Profiling in progress...");
@@ -21,6 +22,18 @@ if(process.env.NODE_ENV == "development") {
     //let filename=`${profilingFolder}/Heap.${now().toISOString()}.heapsnapshot`;
     let filename=`${profilingFolder}/${v8.writeHeapSnapshot()}`;
     logger.info(`Saved heapdump into ${v8.writeHeapSnapshot(filename)}`);
+  });
+
+  intervalInMin=1;
+  cron.schedule(convertTimeToCron(intervalInMin), async () => {
+    logger.info(`schedule task for profiling memory usage running...`);
+    logger.info(process.memoryUsage());
+    const heapUsed = process.memoryUsage().heapUsed / 1024 / 1024;
+    const arrayBuffers = process.memoryUsage().arrayBuffers / 1024 / 1024;
+    const rss = process.memoryUsage().rss / 1024 / 1024;
+    const external = process.memoryUsage().external / 1024 / 1024;
+    const heapTotal = process.memoryUsage().heapTotal / 1024 / 1024;
+    logger.info(`This app is currently using ${Math.floor(heapUsed)} MB of memory (heapTotal : ${Math.floor(heapTotal)} MB - rss : ${Math.floor(rss)} MB - arrayBuffers : ${Math.floor(arrayBuffers)} MB -external : ${Math.floor(external)} MB).`);
   });
 }
 
