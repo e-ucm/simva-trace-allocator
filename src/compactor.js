@@ -358,7 +358,7 @@ export class Compactor {
                         logger.info(activityState);
                         await state.save();
                     } catch(e) {
-                        logger.info(e);
+                        logger.error(e);
                     }
                 }
             } else {

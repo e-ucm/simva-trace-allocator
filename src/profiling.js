@@ -26,14 +26,19 @@ if(process.env.NODE_ENV == "development") {
 
   intervalInMin=1;
   cron.schedule(convertTimeToCron(intervalInMin), async () => {
-    logger.info(`schedule task for profiling memory usage running...`);
-    logger.info(process.memoryUsage());
-    const heapUsed = process.memoryUsage().heapUsed / 1024 / 1024;
-    const arrayBuffers = process.memoryUsage().arrayBuffers / 1024 / 1024;
-    const rss = process.memoryUsage().rss / 1024 / 1024;
-    const external = process.memoryUsage().external / 1024 / 1024;
-    const heapTotal = process.memoryUsage().heapTotal / 1024 / 1024;
-    logger.info(`This app is currently using ${Math.floor(heapUsed)} MB of memory (heapTotal : ${Math.floor(heapTotal)} MB - rss : ${Math.floor(rss)} MB - arrayBuffers : ${Math.floor(arrayBuffers)} MB -external : ${Math.floor(external)} MB).`);
+    let memoryUsage=process.memoryUsage();
+    let cpuUsage=process.cpuUsage();
+    logger.info(`MEMORY USAGE : ${JSON.stringify(memoryUsage)}`);
+    logger.info(`CPU USAGE : ${JSON.stringify(cpuUsage)}`);
+    const heapUsed = memoryUsage.heapUsed / 1024 / 1024;
+    const arrayBuffers = memoryUsage.arrayBuffers / 1024 / 1024;
+    const rss = memoryUsage.rss / 1024 / 1024;
+    const external = memoryUsage.external / 1024 / 1024;
+    const heapTotal = memoryUsage.heapTotal / 1024 / 1024;
+    logger.info(`MEMORY USAGE : This app is currently using ${Math.floor(heapUsed)} MB of memory (heapTotal : ${Math.floor(heapTotal)} MB - rss : ${Math.floor(rss)} MB - arrayBuffers : ${Math.floor(arrayBuffers)} MB -external : ${Math.floor(external)} MB).`);
+    const user = cpuUsage.user / 1000;
+    const system = cpuUsage.system / 1000;
+    logger.info(`CPU USAGE : This app is currently using user ${Math.floor(user)}s and system ${Math.floor(system)}s`);
   });
 }
 
