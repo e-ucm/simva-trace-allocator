@@ -1,14 +1,11 @@
 import path from 'path';
-import { config } from './config.js';
 import { logger } from './logger.js';
 import { fileURLToPath } from 'url';
-import cron from 'node-cron';
-import { convertTimeToCron } from "./utils/date.js";
 import v8 from 'v8';
 import process from 'node:process';
 import ms from 'ms';
 
-if(process.env.NODE_ENV == "development" && config.enabled_debug_profiling) {
+if(process.env.NODE_ENV == "development" && process.env.ENABLE_DEBUG_PROFILING == "true") {
   logger.info("Profiling in progress...");
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);

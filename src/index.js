@@ -14,7 +14,7 @@ const MAX_WAIT_TIME_ON_EXIT = 30*1000;
 let intervalId;
 //import "./prueba2.js";
 
-if (config.concatEventPolicy === "true") {
+if (config.concatEventPolicy) {
     await startKafkaProcess();
 } else {
     await startPrevVersionProcess();

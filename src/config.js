@@ -4,8 +4,7 @@ import ms from "ms";
 
 /**
  * @typedef CompactorOptions
- * @property {boolean} enabled_debug_profiling
- * @property {string} concatEventPolicy 
+ * @property {boolean} concatEventPolicy 
  * @property {number} batchSize
  * @property {number} maxDelay
  * @property {number} refreshInterval
@@ -22,8 +21,7 @@ import ms from "ms";
 
 /** @type {CompactorOptions} */
 export const config = {
-    enabled_debug_profiling : process.env.ENABLE_PROFILING == "true" ? true : false,
-    concatEventPolicy: process.env.CONCAT_EVENT_POLICY || 'true', // if true minio-events else previous version of trace allocator
+    concatEventPolicy: process.env.CONCAT_EVENT_POLICY !== undefined ? (process.env.CONCAT_EVENT_POLICY.toLocaleLowerCase() === 'false' ? false : true) : true, // if true minio-events else previous version of trace allocator
     batchSize: process.env.BATCH_SIZE !== undefined ? parseInt(process.env.BATCH_SIZE) : 500,
     maxDelay: process.env.MAX_DELAY !== undefined ? ms(process.env.MAX_DELAY) : ms("5min"),
     refreshInterval: process.env.REFRESH_INTERVAL !== undefined ? ms(process.env.REFRESH_INTERVAL) : ms("10min"),
