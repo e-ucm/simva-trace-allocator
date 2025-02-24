@@ -257,19 +257,16 @@ export class Compactor {
         const tracesFilename = this.#opts.minio.traces_file;
         const remotePath = `${outputDir}/${activityState.activityId}/${tracesFilename}`;
         try {
-            //if(await this.#minio.fileExists(remotePath)) {
-            //    await this.#minio.copyWithinMinIO(remotePath, `${remotePath}.backup`);
-            //    await this.#minio.removeRemoteFile(remotePath);
-            //}
-            //await this.#minio.copyToRemoteFile(localStatePath, remotePath);
-            await this.#minio.copyWithinMinIO(remoteStatePath, remotePath);
+            const metadata = {
+                "Content-Type": "application/json"
+            };
+            await this.#minio.copyToRemoteFile(localStatePath, remotePath, metadata);
+            //await this.#minio.copyWithinMinIO(remoteStatePath, remotePath);
             logger.info("Object copied successfully!");
         } catch (error) {
             logger.error("Copy failed:");
             logger.error(error);
-            //await this.#minio.copyWithinMinIO(`${remotePath}.backup`, remotePath);
         }
-        //await this.#minio.removeRemoteFile(`${remotePath}.backup`);
         logger.info(`Copied compacted file for activity %s`, activityState.activityId);
     }
 

@@ -38,6 +38,12 @@ import { logger } from './logger.js';
  * @property {string} key key path of the object.
  */
 
+/**
+ * @typedef MetadataObject
+ * @property {string} Version 
+ * @property {string} Content-Type
+ */
+
 export class MinioClient {
 
     /**
@@ -76,6 +82,13 @@ export class MinioClient {
     }
 
     /**
+     * @param {string} filePath
+     */
+    async getMetadataObject(filePath) {
+        return this.#minio.statObject(this.#opts.bucket, filePath);
+    }
+
+    /**
      * 
      * @param {string} file 
      * @returns {Promise<string>}
@@ -103,11 +116,16 @@ export class MinioClient {
      * 
      * @param {string} remotePath 
      * @param {string} localPath
+     * @param {MetadataObject} metadata
      * @returns {Promise<FPutResult>}
      */
-	async copyToRemoteFile(localPath, remotePath) {
+	async copyToRemoteFile(localPath, remotePath, metadata) {
         logger.debug(`Coping file ${localPath} to remote ${remotePath}`);
-        return this.#minio.fPutObject(this.#opts.bucket, remotePath, localPath);
+        if(metadata) {
+            return this.#minio.fPutObject(this.#opts.bucket, remotePath, localPath, metadata);
+        } else {
+           return this.#minio.fPutObject(this.#opts.bucket, remotePath, localPath);
+        }
 	}
 
     /**

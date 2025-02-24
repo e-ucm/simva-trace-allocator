@@ -2,7 +2,6 @@ import { config, isInDebugMode } from './config.js';
 import { logger } from './logger.js';
 import cron from 'node-cron';
 import { Compactor } from './compactor.js';
-import { getState } from './state.js';
 import { convertTimeToCron } from "./utils/date.js";
 import "./profiling.js";
 logger.debug('Current config: %o', config);
