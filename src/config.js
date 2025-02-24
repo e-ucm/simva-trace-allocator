@@ -4,6 +4,7 @@ import ms from "ms";
 
 /**
  * @typedef CompactorOptions
+ * @property {boolean} enabled_debug_profiling
  * @property {string} concatEventPolicy 
  * @property {number} batchSize
  * @property {number} maxDelay
@@ -21,6 +22,7 @@ import ms from "ms";
 
 /** @type {CompactorOptions} */
 export const config = {
+    enabled_debug_profiling : process.env.ENABLE_PROFILING == "true" ? true : false,
     concatEventPolicy: process.env.CONCAT_EVENT_POLICY || 'true', // if true minio-events else previous version of trace allocator
     batchSize: process.env.BATCH_SIZE !== undefined ? parseInt(process.env.BATCH_SIZE) : 500,
     maxDelay: process.env.MAX_DELAY !== undefined ? ms(process.env.MAX_DELAY) : ms("5min"),
