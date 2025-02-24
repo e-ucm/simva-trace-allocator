@@ -161,16 +161,12 @@ export class Compactor {
                 logger.info(`New activity: %s`, activity._id);
                 activityState = await state.create(activity._id);
             }
-            if((config.concatEventPolicy === "true" && activitiesToGo.includes(activity._id)) || ! (config.concatEventPolicy === "true")) {
-                const updated = await this.#updateActivityTraces(activityState);
-                if (!updated) continue;
-                await this.#distributeTrace(activityState);
+            const updated = await this.#updateActivityTraces(activityState);
+            if (!updated) continue;
+            await this.#distributeTrace(activityState);
     
-                if (activities.length % 5) {
-                    await state.save();
-                }
-            } else {
-                logger.debug('Not needed to process activity: %s because of the Concat Event Policy', activity._id);
+            if (activities.length % 5) {
+                await state.save();
             }
         }
         await state.save();
@@ -256,10 +252,24 @@ export class Compactor {
      */
     async #distributeTrace(activityState) {
         const localStatePath = activityState.localStatePath;
+        const remoteStatePath = activityState.remoteStatePath;
         const outputDir = this.#opts.minio.outputs_dir;
         const tracesFilename = this.#opts.minio.traces_file;
         const remotePath = `${outputDir}/${activityState.activityId}/${tracesFilename}`;
-        await this.#minio.copyToRemoteFile(localStatePath, remotePath);
+        try {
+            //if(await this.#minio.fileExists(remotePath)) {
+            //    await this.#minio.copyWithinMinIO(remotePath, `${remotePath}.backup`);
+            //    await this.#minio.removeRemoteFile(remotePath);
+            //}
+            //await this.#minio.copyToRemoteFile(localStatePath, remotePath);
+            await this.#minio.copyWithinMinIO(remoteStatePath, remotePath);
+            logger.info("Object copied successfully!");
+        } catch (error) {
+            logger.error("Copy failed:");
+            logger.error(error);
+            //await this.#minio.copyWithinMinIO(`${remotePath}.backup`, remotePath);
+        }
+        //await this.#minio.removeRemoteFile(`${remotePath}.backup`);
         logger.info(`Copied compacted file for activity %s`, activityState.activityId);
     }
 
@@ -359,6 +369,9 @@ export class Compactor {
                         await state.save();
                     } catch(e) {
                         logger.error(e);
+                        //let list=await this.#minio.listMultipartUploads();
+                        //logger.info(list);
+                        //await this.#minio.abortMultipartUploads(list);
                     }
                 }
             } else {

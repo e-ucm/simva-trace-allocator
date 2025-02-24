@@ -6,6 +6,7 @@ import cron from 'node-cron';
 import { convertTimeToCron } from "./utils/date.js";
 import v8 from 'v8';
 import process from 'node:process';
+import ms from 'ms';
 
 if(process.env.NODE_ENV == "development") {
   logger.info("Profiling in progress...");
@@ -13,19 +14,16 @@ if(process.env.NODE_ENV == "development") {
   const __dirname = path.dirname(__filename);
   const profilingFolder =process.env.PROFILING_FOLDER || path.join(__dirname, '../../profiling');
 
-  // Schedule a task to run every x
-  let intervalInMin=30;
-  const cronTime = convertTimeToCron(intervalInMin);
-  logger.info(cronTime);
-  cron.schedule(cronTime, async () => {
+  function heapdump() {
     logger.info(`schedule task for profiling running...`);
     //let filename=`${profilingFolder}/Heap.${now().toISOString()}.heapsnapshot`;
     let filename=`${profilingFolder}/${v8.writeHeapSnapshot()}`;
     logger.info(`Saved heapdump into ${v8.writeHeapSnapshot(filename)}`);
-  });
+    setTimeout(heapdump, ms("30min"));
+  }
+  setTimeout(heapdump, ms("1min"));
 
-  intervalInMin=1;
-  cron.schedule(convertTimeToCron(intervalInMin), async () => {
+  function memoryAndCPUUsage() {
     let memoryUsage=process.memoryUsage();
     let cpuUsage=process.cpuUsage();
     logger.info(`MEMORY USAGE : ${JSON.stringify(memoryUsage)}`);
@@ -39,7 +37,9 @@ if(process.env.NODE_ENV == "development") {
     const user = cpuUsage.user / 1000;
     const system = cpuUsage.system / 1000;
     logger.info(`CPU USAGE : This app is currently using user ${Math.floor(user)}s and system ${Math.floor(system)}s`);
-  });
+    setTimeout(memoryAndCPUUsage, ms("1min"));
+  }
+  setTimeout(memoryAndCPUUsage, ms("1min"));
 }
 
 /*

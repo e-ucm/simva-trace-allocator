@@ -32,6 +32,12 @@ import { logger } from './logger.js';
  * @property {string} versionId versionId of the object.
  */
 
+/**
+ * @typedef MultipartUploadResult
+ * @property {string} uploadId uploadId of the object.
+ * @property {string} key key path of the object.
+ */
+
 export class MinioClient {
 
     /**
@@ -97,11 +103,73 @@ export class MinioClient {
      * 
      * @param {string} remotePath 
      * @param {string} localPath
-     * @returns {Promise<void>}
+     * @returns {Promise<FPutResult>}
      */
 	async copyToRemoteFile(localPath, remotePath) {
+        logger.debug(`Coping file ${localPath} to remote ${remotePath}`);
         return this.#minio.fPutObject(this.#opts.bucket, remotePath, localPath);
 	}
+
+    /**
+     * 
+     * @param {string} objectName 
+     * @param {string} uploadId
+     * @returns {Promise<void>}
+     */
+    async abortMultipartUpload(objectName, uploadId) {
+        await this.#minio.abortMultipartUpload(this.#opts.bucket, objectName, uploadId);
+    }
+
+    /**
+     * 
+     * @param {MultipartUploadResult[]} list
+     * @returns {Promise<void>}
+     */
+    async abortMultipartUploads(list) {
+        for (const item of list) {
+            try {
+                await this.#minio.abortMultipartUpload(this.#opts.bucket, item.key, item.uploadId);
+                logger.info(`Aborted upload: ${item.key} (Upload ID: ${item.uploadId})`);
+            } catch (error) {
+                logger.error(`Failed to abort ${item.key}:`, error);
+            }
+        }
+    }
+    
+
+    /**
+     * 
+     * @returns {Promise<MultipartUploadResult[]>}
+     */
+    async listMultipartUploads() {
+        return new Promise((resolve, reject) => {
+          const uploads = [];
+          
+          const stream = this.#minio.listIncompleteUploads(this.#opts.bucket, "", true);
+          
+          stream.on("data", (obj) => {
+            uploads.push(obj);
+            logger.info("Active Upload:", obj);
+          });
+      
+          stream.on("end", () => {
+            resolve(uploads);
+          });
+      
+          stream.on("error", (err) => {
+            reject(err);
+          });
+        });
+    }
+
+    async listV2MultipartUploads() {
+        this.#minio.listIncompleteUploads(this.#opts.bucket, "", true)
+          .on("data", async (obj) => {
+            logger.info(obj);
+            await this.#minio.abortMultipartUpload(this.#opts.bucket, obj.key, obj.uploadId);
+          })
+          .on("error", (err) => logger.error(err));
+      }
 
     /**
      * 
@@ -128,6 +196,7 @@ export class MinioClient {
      * @returns {Promise<void>}
      */
 	async removeRemoteFile(path) {
+        logger.debug(`removeRemoteFile file ${path}`);
         return this.#minio.removeObject(this.#opts.bucket, path);
 	}
 
@@ -151,6 +220,23 @@ export class MinioClient {
         const nextValue = await iterator.next();
         return ! nextValue.done;
     }
+
+    
+    /**
+     * 
+     * @param {string} sourcePath 
+     * @param {string} destinationPath 
+     * @returns {Promise<void>}
+     */
+    async copyWithinMinIO(sourcePath, destinationPath) {
+        logger.debug(`Coping file into remote from ${sourcePath} to ${destinationPath}`);
+        this.#minio.copyObject(
+            this.#opts.bucket,
+            destinationPath,
+            `/${this.#opts.bucket}/${sourcePath}`
+          );
+      }
+      
 
 }
 

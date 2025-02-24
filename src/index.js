@@ -13,6 +13,7 @@ const run = compactor.compact.bind(compactor);
 const MAX_WAIT_TIME_ON_EXIT = 30*1000;
 
 let intervalId;
+//import "./prueba2.js";
 
 if (config.concatEventPolicy === "true") {
     await startKafkaProcess();
@@ -21,19 +22,25 @@ if (config.concatEventPolicy === "true") {
 }
 
 async function startKafkaProcess() {
-    await compactor.processConsistencyAndGarbage();
     // Schedule a task to run every x
     let gcIntervalInMin=Math.round(config.gcInterval/(1000*60));
     const cronTime = convertTimeToCron(gcIntervalInMin);
     logger.info(cronTime);
     cron.schedule(cronTime, async () => {
         logger.info("Compactor starting process garbage scheduled task running every x minutes");
-        await compactor.processConsistencyAndGarbage();
+        try {
+            await compactor.processConsistencyAndGarbage();
+        } catch(e) {
+            logger.error(e);
+        }
     });
+    try {
+        await compactor.processConsistencyAndGarbage();
+    } catch(e) {
+        logger.error(e);
+    }
     // Start consuming messages
-    (async () => {
-        await compactor.startKafkaConsumer();
-    })();
+    await compactor.startKafkaConsumer();
 }
 
 async function startPrevVersionProcess() {

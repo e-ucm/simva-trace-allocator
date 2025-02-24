@@ -393,6 +393,13 @@ export class ActivityCompactionState {
 	}
 
 	/**
+	 * @returns
+	 */
+	get remoteStatePath() {
+		return this.#stateRemotePath();
+	}
+
+	/**
 	 * 
 	 * @param {string} [sha1]
 	 * @returns 
