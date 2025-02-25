@@ -25,5 +25,4 @@ RUN mkdir -p /home/node/logs
 RUN chown -R node:node /home/node/logs
 
 
-
-CMD [ "/home/node/app/docker-startup.sh" ]
+CMD [ "npm", "start" ]
