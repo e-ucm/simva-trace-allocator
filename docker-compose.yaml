@@ -1,0 +1,56 @@
+version: '3'
+
+services:
+  simva-trace-allocator:
+    build: ./
+    command: [ "npm", "run", "dev" ]
+    stdin_open: true
+    tty: true
+    environment:
+      #DEBUG
+      DEBUG: true
+      #LOG
+      LOG_LEVEL: debug
+      LOG_FOLDER: /home/node/logs
+      #NODE
+      NODE_ENV: development
+      NODE_EXTRA_CA_CERTS: /home/node/app/DemoCA.crt
+      #TRACE ALLOCATOR
+      CONCAT_EVENT_POLICY: true
+      BATCH_SIZE: 100
+      MAX_DELAY: 5min
+      REFRESH_INTERVAL: 4h
+      LOCAL_STATE: /data
+      REMOTE_STATE: state
+      REMOVE_DRY_RUN: true
+      GC_INTERVAL: 2h
+      COPY_INSTEAD_RENAME: true
+      TRY_RECOVERY: true
+      #MINIO
+      MINIO_HOST: minio-api.external.test
+      MINIO_SSL: true
+      MINIO_PORT: 443
+      MINIO_ACCESS_KEY: minio
+      MINIO_SECRET_KEY: secret
+      MINIO_BUCKET: traces
+      MINIO_TOPICS_DIR: kafka-topics
+      MINIO_TRACES_TOPIC: traces
+      MINIO_OUTPUTS_DIR: outputs
+      MINIO_TRACES_FILE: traces.json
+      #SIMVA API
+      SIMVA_HOST: simva-api.external.test
+      SIMVA_PROTOCOL: https
+      SIMVA_PORT: 443
+      SIMVA_USER: admin
+      SIMVA_PASSWORD: password
+      SIMVA_WAIT_TIME: 10
+      SIMVA_MAX_RETRIES: 20
+      #KAFKA
+      SIMVA_KAFKA_CLIENTID: simva_trace_allocator
+      SIMVA_KAFKA_BROKER: kafka1.internal.test:9092
+      SIMVA_KAFKA_GROUPID: simva_trace_allocator
+      SIMVA_KAFKA_MINIO_TOPIC: minio-events
+    hostname: simva-trace-allocator.internal.test
+    volumes:
+      - ./:/home/node/app
+      - /home/node/app/node_modules #exclude node_modules

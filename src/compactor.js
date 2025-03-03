@@ -6,6 +6,7 @@ import { KafkaClient } from './kafka.js';
 import { getState } from './state.js';
 import { createHash } from 'node:crypto';
 import { binarySearch, diffArray } from './utils/misc.js';
+import { config } from './config.js';
 
 /** @typedef {import('./config.js').CompactorOptions} CompactorOptions */
 /** @typedef {import('./simva.js').Activity} Activity */
@@ -143,7 +144,7 @@ export class Compactor {
 
         logger.info(`Known %d activities, received %d`, state.size, activities.length);
 
-        await this.#garbageCollectActivities(state, activities);
+        let activitiesToGo = await this.#garbageCollectActivities(state, activities);
 
         this.status.total = activities.length;
         for(let idx=0; idx < activities.length; idx++) {
@@ -160,11 +161,10 @@ export class Compactor {
                 logger.info(`New activity: %s`, activity._id);
                 activityState = await state.create(activity._id);
             }
-
             const updated = await this.#updateActivityTraces(activityState);
             if (!updated) continue;
             await this.#distributeTrace(activityState);
-
+    
             if (activities.length % 5) {
                 await state.save();
             }
@@ -202,10 +202,13 @@ export class Compactor {
                     logger.error(error);
                 }
             }
+            logger.info('Activities to removed OK.');
         }
-
+        logger.info('Starting collecting state garbage.');
         // Garbage collect state files in activities
-        await state.garbageCollect();
+        const activityToPass = await state.garbageCollect();
+        logger.info('Collecting state garbage finished.');
+        return activityToPass;
     }
 
     /**
@@ -249,11 +252,29 @@ export class Compactor {
      */
     async #distributeTrace(activityState) {
         const localStatePath = activityState.localStatePath;
+        const remoteStatePath = activityState.remoteStatePath;
         const outputDir = this.#opts.minio.outputs_dir;
         const tracesFilename = this.#opts.minio.traces_file;
         const remotePath = `${outputDir}/${activityState.activityId}/${tracesFilename}`;
-        await this.#minio.copyToRemoteFile(localStatePath, remotePath);
+        try {
+            const metadata = {
+                "Content-Type": "application/json"
+            };
+            await this.#minio.copyToRemoteFile(localStatePath, remotePath, metadata);
+            //await this.#minio.copyWithinMinIO(remoteStatePath, remotePath);
+            logger.info("Object copied successfully!");
+        } catch (error) {
+            logger.error("Copy failed:");
+            logger.error(error);
+        }
         logger.info(`Copied compacted file for activity %s`, activityState.activityId);
+    }
+
+    async processConsistencyAndGarbage() {
+        logger.info('Check consistency');
+        await this.#checkConsistency();
+        logger.info('Start compaction');
+        await this.#compactActivities();
     }
 
     // Method to process messages (acts as the callback for KafkaClient)
@@ -267,8 +288,6 @@ export class Compactor {
             logger.info(message.value);
 
             let state = await getState(this.#opts, this.#minio);
-            let activities = await this.#simva.getActivities({ type: ['gameplay', 'miniokafka', 'rageminio'] });
-            await this.#garbageCollectActivities(state, activities);
             // Set up the delimiter and the required bucket and path values
             let delimiter = '/';
             let bucket = this.#opts.minio.bucket;
@@ -346,7 +365,10 @@ export class Compactor {
                         logger.info(activityState);
                         await state.save();
                     } catch(e) {
-                        logger.info(e);
+                        logger.error(e);
+                        //let list=await this.#minio.listMultipartUploads();
+                        //logger.info(list);
+                        //await this.#minio.abortMultipartUploads(list);
                     }
                 }
             } else {

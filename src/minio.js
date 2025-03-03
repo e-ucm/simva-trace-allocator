@@ -32,6 +32,18 @@ import { logger } from './logger.js';
  * @property {string} versionId versionId of the object.
  */
 
+/**
+ * @typedef MultipartUploadResult
+ * @property {string} uploadId uploadId of the object.
+ * @property {string} key key path of the object.
+ */
+
+/**
+ * @typedef MetadataObject
+ * @property {string} Version 
+ * @property {string} Content-Type
+ */
+
 export class MinioClient {
 
     /**
@@ -70,6 +82,13 @@ export class MinioClient {
     }
 
     /**
+     * @param {string} filePath
+     */
+    async getMetadataObject(filePath) {
+        return this.#minio.statObject(this.#opts.bucket, filePath);
+    }
+
+    /**
      * 
      * @param {string} file 
      * @returns {Promise<string>}
@@ -97,11 +116,78 @@ export class MinioClient {
      * 
      * @param {string} remotePath 
      * @param {string} localPath
+     * @param {MetadataObject} metadata
+     * @returns {Promise<FPutResult>}
+     */
+	async copyToRemoteFile(localPath, remotePath, metadata) {
+        logger.debug(`Coping file ${localPath} to remote ${remotePath}`);
+        if(metadata) {
+            return this.#minio.fPutObject(this.#opts.bucket, remotePath, localPath, metadata);
+        } else {
+           return this.#minio.fPutObject(this.#opts.bucket, remotePath, localPath);
+        }
+	}
+
+    /**
+     * 
+     * @param {string} objectName 
+     * @param {string} uploadId
      * @returns {Promise<void>}
      */
-	async copyToRemoteFile(localPath, remotePath) {
-        return this.#minio.fPutObject(this.#opts.bucket, remotePath, localPath);
-	}
+    async abortMultipartUpload(objectName, uploadId) {
+        await this.#minio.abortMultipartUpload(this.#opts.bucket, objectName, uploadId);
+    }
+
+    /**
+     * 
+     * @param {MultipartUploadResult[]} list
+     * @returns {Promise<void>}
+     */
+    async abortMultipartUploads(list) {
+        for (const item of list) {
+            try {
+                await this.#minio.abortMultipartUpload(this.#opts.bucket, item.key, item.uploadId);
+                logger.info(`Aborted upload: ${item.key} (Upload ID: ${item.uploadId})`);
+            } catch (error) {
+                logger.error(`Failed to abort ${item.key}:`, error);
+            }
+        }
+    }
+    
+
+    /**
+     * 
+     * @returns {Promise<MultipartUploadResult[]>}
+     */
+    async listMultipartUploads() {
+        return new Promise((resolve, reject) => {
+          const uploads = [];
+          
+          const stream = this.#minio.listIncompleteUploads(this.#opts.bucket, "", true);
+          
+          stream.on("data", (obj) => {
+            uploads.push(obj);
+            logger.info("Active Upload:", obj);
+          });
+      
+          stream.on("end", () => {
+            resolve(uploads);
+          });
+      
+          stream.on("error", (err) => {
+            reject(err);
+          });
+        });
+    }
+
+    async listV2MultipartUploads() {
+        this.#minio.listIncompleteUploads(this.#opts.bucket, "", true)
+          .on("data", async (obj) => {
+            logger.info(obj);
+            await this.#minio.abortMultipartUpload(this.#opts.bucket, obj.key, obj.uploadId);
+          })
+          .on("error", (err) => logger.error(err));
+      }
 
     /**
      * 
@@ -128,6 +214,7 @@ export class MinioClient {
      * @returns {Promise<void>}
      */
 	async removeRemoteFile(path) {
+        logger.debug(`removeRemoteFile file ${path}`);
         return this.#minio.removeObject(this.#opts.bucket, path);
 	}
 
@@ -151,6 +238,23 @@ export class MinioClient {
         const nextValue = await iterator.next();
         return ! nextValue.done;
     }
+
+    
+    /**
+     * 
+     * @param {string} sourcePath 
+     * @param {string} destinationPath 
+     * @returns {Promise<void>}
+     */
+    async copyWithinMinIO(sourcePath, destinationPath) {
+        logger.debug(`Coping file into remote from ${sourcePath} to ${destinationPath}`);
+        this.#minio.copyObject(
+            this.#opts.bucket,
+            destinationPath,
+            `/${this.#opts.bucket}/${sourcePath}`
+          );
+      }
+      
 
 }
 
