@@ -116,16 +116,12 @@ export class MinioClient {
      * 
      * @param {string} remotePath 
      * @param {string} localPath
-     * @param {MetadataObject} metadata
+     * @param {MetadataObject} [metadata]
      * @returns {Promise<FPutResult>}
      */
 	async copyToRemoteFile(localPath, remotePath, metadata) {
         logger.debug(`Coping file ${localPath} to remote ${remotePath}`);
-        if(metadata) {
-            return this.#minio.fPutObject(this.#opts.bucket, remotePath, localPath, metadata);
-        } else {
-           return this.#minio.fPutObject(this.#opts.bucket, remotePath, localPath);
-        }
+        return this.#minio.fPutObject(this.#opts.bucket, remotePath, localPath, metadata);
 	}
 
     /**
