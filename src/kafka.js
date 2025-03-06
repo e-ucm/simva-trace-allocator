@@ -32,7 +32,7 @@ export class KafkaClient {
     }
 
     // Run the consumer and process messages
-    async consumeLatestMessages(onMessage) {
+    async startKafkaConsumer(onMessage) {
         try {
             await this.connect();
 

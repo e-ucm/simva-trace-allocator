@@ -396,7 +396,7 @@ export class Compactor {
         try {
             logger.info('Compactor starting Kafka consumption...');
             // Start Kafka consumption and pass the processMessage as a callback
-            await this.#kafka.consumeLatestMessages(this.processMessage.bind(this));
+            await this.#kafka.startKafkaConsumer(this.processMessage.bind(this));
         } catch (error) {
             console.error('Error starting Compactor:', error);
         }
