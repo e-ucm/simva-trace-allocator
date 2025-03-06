@@ -4,9 +4,9 @@ import { MinioClient } from './minio.js';
 import { SimvaClient } from './simva.js';
 import { KafkaClient } from './kafka.js';
 import { getState } from './state.js';
-import { createHash } from 'node:crypto';
 import { binarySearch, diffArray } from './utils/misc.js';
 import { config } from './config.js';
+import { sha1sums } from './utils/sha.js';
 
 /** @typedef {import('./config.js').CompactorOptions} CompactorOptions */
 /** @typedef {import('./simva.js').Activity} Activity */
@@ -219,12 +219,7 @@ export class Compactor {
     async #updateActivityTraces(activityState) {
         let traceFiles = (await this.#minio.getTraces(activityState.activityId)).map((o) => o.name);
         traceFiles.sort();
-        const hash = createSha1();
-        for(const traceFile of traceFiles) {
-            hash.update(traceFile);
-            hash.update('\n');
-        }
-        const sha1 = hash.digest('hex');
+        const sha1 = sha1sums(traceFiles);
         if (sha1 === activityState.currentSha1) {
             logger.debug(`Nothing to do for activity %s`, activityState.activityId);
             return false;
@@ -387,10 +382,7 @@ export class Compactor {
      * @returns {Promise<boolean>} false if nothing new
      */
     async #updateActivityTracesFromPath(activityState, keyPath) {
-        const hash = createSha1();
-        hash.update(keyPath);
-        hash.update('\n');
-        const sha1 = hash.digest('hex');
+        const sha1 = sha1sums(keyPath);
         const nowDate = now();
         const filesToAdd = [keyPath];
         logger.info(`Compacting activity %s`, activityState.activityId);
@@ -435,13 +427,4 @@ export class Compactor {
     getOpts() {
         return this.#opts;
     }
-}
-
-/**
- * Create sha1 hash function.
- *
- * @returns 
- */
-function createSha1() {
-	return createHash('sha1');
 }
