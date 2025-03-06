@@ -277,102 +277,96 @@ export class Compactor {
      * @param {any} message
      */
     async processMessage(message) {
-        try {
-            // Log the received message
-            logger.info('Received message:');
-            logger.info(message.value);
+        // Log the received message
+        logger.info('Received message:');
+        logger.info(message.value);
 
-            let state = await getState(this.#opts, this.#minio);
-            // Set up the delimiter and the required bucket and path values
-            let delimiter = '/';
-            let bucket = this.#opts.minio.bucket;
-            
-            // Build the path to traces topic
-            let tracestopicspath = `${this.#opts.minio.topics_dir}${delimiter}${this.#opts.minio.traces_topic}${delimiter}_id=`;
+        let state = await getState(this.#opts, this.#minio);
+        // Set up the delimiter and the required bucket and path values
+        let delimiter = '/';
+        let bucket = this.#opts.minio.bucket;
         
-            // Log the constructed path
-            logger.info(`Trace topic path: ${tracestopicspath}`);
+        // Build the path to traces topic
+        let tracestopicspath = `${this.#opts.minio.topics_dir}${delimiter}${this.#opts.minio.traces_topic}${delimiter}_id=`;
+    
+        // Log the constructed path
+        logger.info(`Trace topic path: ${tracestopicspath}`);
+    
+        // Parse the message value (assuming it's a JSON string)
+        let ev = JSON.parse(message.value);
+        let key = ev.Key;
         
-            // Parse the message value (assuming it's a JSON string)
-            let ev = JSON.parse(message.value);
-            let key = ev.Key;
-            
-            // Log the key extracted from the message
-            logger.info(`Received Key: ${key}`);
+        // Log the key extracted from the message
+        logger.info(`Received Key: ${key}`);
+    
+        // Remove the bucket and trace topic path from the key to get the key value
+        let keyvalue = key.replace(`${bucket}${delimiter}${tracestopicspath}`, "");
         
-            // Remove the bucket and trace topic path from the key to get the key value
-            let keyvalue = key.replace(`${bucket}${delimiter}${tracestopicspath}`, "");
-            
-            // Log the key value after removal
-            logger.info(`Key value without bucket and path: ${keyvalue}`);
+        // Log the key value after removal
+        logger.info(`Key value without bucket and path: ${keyvalue}`);
+    
+        // Split the key value to extract activityId and filename
+        let added = keyvalue.split(delimiter);
         
-            // Split the key value to extract activityId and filename
-            let added = keyvalue.split(delimiter);
-            
-            // Initialize variables for activityId and filename
-            let activityId = null;
-            let filename = null;
-            let keyWithoutBucket = null;
-        
-            // If the split key has exactly 2 parts, extract activityId and filename
-            if (added.length === 2) {
-                activityId = added[0];
-                filename = added[1];
-                keyWithoutBucket = `${tracestopicspath}${activityId}${delimiter}${filename}`;
-
-                // Log the extracted values
-                logger.info(`activityId: ${activityId}, filename: ${filename}, key: ${key}, keyWithoutBucket: ${keyWithoutBucket}`);
-                
-                // ActivityState
-                let activityState = state.get(activityId);
-                if (activityState === undefined) {
-                    logger.info(`New activity: %s`, activityId);
-                    activityState = await state.create(activityId);
-                }
-                logger.info(activityState);
-                // compute which files need to be appended
-                const activityFiles = (await activityState.files()).sort();
-                logger.info(activityFiles);
-                
-                if(activityFiles.includes(keyWithoutBucket)) {
-                    logger.warn("Already consumed.")
-                } else {
-                    try {
-                        let positionvalue=-binarySearch(activityFiles, keyWithoutBucket, true, (a,b)=> { 
-                            if(typeof a == "string" && typeof b == "string" ) {
-                                return a.localeCompare(b); 
-                            } else {
-                                return -1;
-                            }
-                        })-1;
-                        var nextposition=activityFiles.length;
-                        logger.info(keyWithoutBucket);
-                        logger.info("positionvalue:");
-                        logger.info(positionvalue);
-                        logger.info("nextposition:");
-                        logger.info(nextposition);
-                        if(positionvalue < nextposition) {
-                            logger.warn("Not ordered. Should have been consumed before.")
-                        }
-                        await this.#updateActivityTracesFromPath(activityState, keyWithoutBucket);
-                        logger.info(activityState);
-                        await this.#distributeTrace(activityState);
-                        logger.info(activityState);
-                        await state.save();
-                    } catch(e) {
-                        logger.error(e);
-                        //let list=await this.#minio.listMultipartUploads();
-                        //logger.info(list);
-                        //await this.#minio.abortMultipartUploads(list);
-                    }
-                }
-            } else {
-                logger.warn('Key format is unexpected. Unable to extract activityId and filename.');
-            }
-        } catch(e) {
-            logger.debug('Error processing message:');
-            logger.debug(e);
+        // Initialize variables for activityId and filename
+        let activityId = null;
+        let filename = null;
+        let keyWithoutBucket = null;
+    
+        // If the split key has exactly 2 parts, extract activityId and filename
+        if (added.length === 2) {
+            throw new Error('Key format is unexpected. Unable to extract activityId and filename.');
         }
+        activityId = added[0];
+        filename = added[1];
+        keyWithoutBucket = `${tracestopicspath}${activityId}${delimiter}${filename}`;
+
+        // Log the extracted values
+        logger.info(`activityId: ${activityId}, filename: ${filename}, key: ${key}, keyWithoutBucket: ${keyWithoutBucket}`);
+        
+        // ActivityState
+        let activityState = state.get(activityId);
+        if (activityState === undefined) {
+            logger.info(`New activity: %s`, activityId);
+            activityState = await state.create(activityId);
+        }
+        logger.info(activityState);
+        // compute which files need to be appended
+        const activityFiles = (await activityState.files()).sort();
+        logger.info(activityFiles);
+        
+        if(activityFiles.includes(keyWithoutBucket)) {
+            logger.warn("Already consumed: %s", keyWithoutBucket);
+            return;
+        }
+
+        let positionvalue=-binarySearch(activityFiles, keyWithoutBucket, true, (a,b)=> { 
+            if(typeof a == "string" && typeof b == "string" ) {
+                return a.localeCompare(b); 
+            } else {
+                return -1;
+            }
+        })-1;
+
+        const nextposition = activityFiles.length;
+
+        logger.info(keyWithoutBucket);
+        logger.info("positionvalue:");
+        logger.info(positionvalue);
+        logger.info("nextposition:");
+        logger.info(nextposition);
+
+        if(positionvalue < nextposition) {
+            logger.warn("Not ordered. Should have been consumed before.")
+        }
+
+        await this.#updateActivityTracesFromPath(activityState, keyWithoutBucket);
+        logger.info(activityState);
+
+        await this.#distributeTrace(activityState);
+        logger.info(activityState);
+
+        await state.save();
     }
      
     /**
