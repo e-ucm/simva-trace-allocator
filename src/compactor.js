@@ -303,7 +303,7 @@ export class Compactor {
         let keyWithoutBucket = null;
     
         // If the split key has exactly 2 parts, extract activityId and filename
-        if (added.length === 2) {
+        if (added.length !== 2) {
             throw new Error('Key format is unexpected. Unable to extract activityId and filename.');
         }
         activityId = added[0];
@@ -329,7 +329,6 @@ export class Compactor {
             return;
         }
         const newActivityFiles= await activityState.insertOrdered([keyWithoutBucket]);
-        logger.debug(newActivityFiles);
         const sha1 = sha1sums(newActivityFiles);
         await this.#updateActivityTracesFromPath(activityState, keyWithoutBucket, sha1);
         logger.debug(activityState);
