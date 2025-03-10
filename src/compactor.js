@@ -2,10 +2,8 @@ import { now, duration, formatDuration } from './utils/date.js';
 import { logger } from './logger.js';
 import { MinioClient } from './minio.js'; 
 import { SimvaClient } from './simva.js';
-import { KafkaClient } from './kafka.js';
 import { getState } from './state.js';
 import { binarySearch, diffArray } from './utils/misc.js';
-import { config } from './config.js';
 import { sha1sums } from './utils/sha.js';
 
 /** @typedef {import('./config.js').CompactorOptions} CompactorOptions */
@@ -29,7 +27,6 @@ export class Compactor {
         this.#opts = opts;
         this.#minio = new MinioClient(opts.minio);
         this.#simva = new SimvaClient(opts.simva);
-        this.#kafka = new KafkaClient(opts.kafka);
         this.shouldExit = false;
         this.status = {
             processing: false,
@@ -43,9 +40,6 @@ export class Compactor {
 
     /** @type {MinioClient} */
     #minio;
-
-    /** @type {KafkaClient} */
-    #kafka;
 
     /** @type {SimvaClient} */
     #simva;
@@ -248,7 +242,8 @@ export class Compactor {
         const remotePath = activityState.remoteOutputPath;
         try {
             const metadata = {
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "Version": "1"
             };
             await this.#minio.copyToRemoteFile(localStatePath, remotePath, metadata);
             //await this.#minio.copyWithinMinIO(remoteStatePath, remotePath);
@@ -381,27 +376,6 @@ export class Compactor {
         logger.debug(filesToAdd);
         await activityState.update(filesToAdd, nowDate, sha1);
         return true;
-    }
-
-    // Method to start consuming messages using KafkaClient
-    async startKafkaConsumer() {
-        try {
-            logger.info('Compactor starting Kafka consumption...');
-            // Start Kafka consumption and pass the processMessage as a callback
-            await this.#kafka.startKafkaConsumer(this.processMessage.bind(this));
-        } catch (error) {
-            logger.error('Error starting Compactor:', error);
-        }
-    }
-
-    // Method to stop consuming messages
-    async stopKafkaConsumer() {
-        try {
-            await this.#kafka.disconnect();
-            logger.info('Compactor stopped Kafka consumption.');
-        } catch (error) {
-            logger.error('Error stopping Compactor:', error);
-        }
     }
     
     /**
