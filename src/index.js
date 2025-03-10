@@ -22,7 +22,7 @@ if (config.concatEventPolicy) {
         const cronTime = convertTimeToCron(gcIntervalInMin);
         logger.info(cronTime);
         const task = async () => {
-            logger.info("Compactor starting process garbage scheduled task running every x minutes");
+            logger.info("Compactor starting process garbage scheduled task running every %s minutes", gcIntervalInMin);
             try {
                 await compactor.processConsistencyAndGarbage();
             } catch(e) {
@@ -39,7 +39,7 @@ if (config.concatEventPolicy) {
             // Start Kafka consumption and pass the processMessage as a callback
             await kafka.startKafkaConsumer(compactor.processMessage);
         } catch (error) {
-            logger.error('Error starting Compactor:', error);
+            logger.error('Error starting Compactor: %o', error);
         }
     }
     // Method to stop consuming messages
@@ -48,7 +48,7 @@ if (config.concatEventPolicy) {
             await kafka.disconnect();
             logger.info('Compactor stopped Kafka consumption.');
         } catch (error) {
-            logger.error('Error stopping Compactor:', error);
+            logger.error('Error stopping Compactor:: %o', error);
         }
     }
 } else {    
@@ -70,7 +70,7 @@ if (config.concatEventPolicy) {
     
             logger.info('Compactor initialized.');
         } catch (error) {
-            logger.error('Error during compactor initialization:', error);
+            logger.error('Error during compactor initialization:: %o', error);
         }
         
         process.on('SIGTERM', () => {
