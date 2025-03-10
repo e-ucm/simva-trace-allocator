@@ -73,7 +73,8 @@ export class ActivityCompactionState {
 	 */
 	async insertOrdered(files) {
 		let activityFiles = await this.files();
-		for(let file in files) {
+		for(let i in files) {
+			let file = files[i];
 			let positionvalue=-binarySearch(activityFiles, file, true, (a,b)=> { 
 				if(typeof a == "string" && typeof b == "string" ) {
 					return a.localeCompare(b); 
@@ -83,20 +84,21 @@ export class ActivityCompactionState {
 			})-1;
 
 			const nextposition = activityFiles.length;
-			logger.info(file);
-			logger.info("positionvalue:");
-			logger.info(positionvalue);
-			logger.info("nextposition:");
-			logger.info(nextposition);
+			logger.debug(file);
+			logger.debug("positionvalue:");
+			logger.debug(positionvalue);
+			logger.debug("nextposition:");
+			logger.debug(nextposition);
 			
 			if(positionvalue < nextposition) {
 				logger.warn("Not ordered. Should have been consumed before.")
+				activityFiles.splice(positionvalue, 0, file);
+			} else {
+				activityFiles.push(file);
 			}
-			
-			activityFiles.splice(nextposition, 0, file);
-			logger.info(activityFiles);
+			logger.debug(activityFiles);
 		}
-		return files;
+		return activityFiles;
 	}
 
 	async garbageCollect() {
@@ -466,14 +468,10 @@ export class ActivityCompactionState {
 	async #saveLocalFilesState(filesToAdd, sha1) {
 		const filesStatePath = this.#filesStateLocalPath(sha1);
 		const tmpPath = mktempPath();
-		if (this.currentSha1 !== null && this.currentSha1 !== sha1) {
-			const currentFilesStatePath = this.#filesStateLocalPath();
-			await copyNoOverwrite(currentFilesStatePath, tmpPath);
-		}
-		const stateFiles = await this.insertOrdered(filesToAdd);
+		const stateFiles = (await this.insertOrdered(filesToAdd)).join('\r\n');
 		const withFilesState = withFile(tmpPath, 'a');
 		await withFilesState(async (file) => {
-			await file.writeFile(stateFiles.join("\n"));
+			await file.writeFile(stateFiles);
 		})
 		await rename(tmpPath, filesStatePath, this.#opts.copyInsteadRename);
 	}
