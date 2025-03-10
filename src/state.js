@@ -11,6 +11,7 @@ import { diffArray, diffSet } from './utils/misc.js';
 /**
  * @typedef SerializedCompactorState
  * @property {string} lastGC
+ * @property {number} version
  * @property {Map<string, ActivityCompactionState>} states
  */
 
@@ -26,7 +27,6 @@ export class ActivityCompactionState {
 		this.activityId = activityId;
 		this.#opts = opts;
 		this.#minio = minio;
-		this.owners = [];
 		this.currentSha1 = null;
 		this.lastUpdate = epoch();
 	}
@@ -39,9 +39,6 @@ export class ActivityCompactionState {
 
 	/** @type {string} */
 	activityId;
-
-	/** @type {string[]} */
-	owners;
 
 	/** @type {string} */
 	currentSha1;
@@ -294,6 +291,17 @@ export class ActivityCompactionState {
 		return path;
 	}
 
+	/**
+	 * 
+	 * @returns 
+	 */
+	#outputRemotePath() {
+		const path = join(this.#opts.minio.outputs_dir, this.activityId,this.#opts.minio.traces_file);
+		return path;
+	}
+
+	
+
 	async #copyFromRemoteFilesState() {
 		const remotePath = this.#filesStateRemotePath();
 		const localPath = this.#filesStateLocalPath();
@@ -400,6 +408,13 @@ export class ActivityCompactionState {
 	}
 
 	/**
+	 * @returns
+	 */
+	get remoteOutputPath() {
+		return this.#outputRemotePath();
+	}
+
+	/**
 	 * 
 	 * @param {string} [sha1]
 	 * @returns 
@@ -495,6 +510,7 @@ export class CompactorState {
 		this.#minio = minio;
 		this.#states = new Map();
 		this.#lastGC = null;
+		this.#version = null;
 	}
 	/** @type {CompactorOptions} opts */
 	#opts;
@@ -507,6 +523,9 @@ export class CompactorState {
 
 	/** @type {Date} */
 	#lastGC;
+
+	/** @type {Number} */
+	#version;
 
 	async init() {
 		let loaded = await this.#loadLocalState();
@@ -622,11 +641,14 @@ export class CompactorState {
 			}
 		}
 		this.#lastGC = serializedState.lastGC !== null ? new Date(Date.parse(serializedState.lastGC)) : null;
+		this.#version = serializedState.version !== null ? serializedState.version : null ;
 	}
 
 	async save() {
+		this.#version = this.#version !== null ? 0 : this.#version+1;
 		/** @type {SerializedCompactorState} */
 		const serializedState = {
+			version: this.#version,
 			states: this.#states,
 			lastGC: this.#lastGC !== null ? this.#lastGC.toISOString() : null
 		}
@@ -719,8 +741,7 @@ function replacer(key, value) {
 			value: {
 				activityId : value.activityId,
 				lastUpdate : value.lastUpdate.toISOString(),
-				currentSha1 : value.currentSha1,
-				owners : value.owners
+				currentSha1 : value.currentSha1
 			}
 		}
 	}
@@ -743,7 +764,6 @@ function withContextReviver(opts, minio) {
 				const activityState = new ActivityCompactionState(value.activityId, opts, minio);
 				activityState.lastUpdate = parseDate(value.lastUpdate);
 				activityState.currentSha1 = value.currentSha1;
-				activityState.owners = value.owners;
 				return activityState;
 			}
 		}

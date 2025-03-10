@@ -59,7 +59,7 @@ export class KafkaClient {
                 }
             });
         } catch (error) {
-            console.error('Error consuming messages:', error);
+            console.error('Error starting Kafka messages consumer :', error);
         }
     }
 
