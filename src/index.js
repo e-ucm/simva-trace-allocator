@@ -37,7 +37,7 @@ if (config.concatEventPolicy) {
         try {
             logger.info('Compactor starting Kafka consumption...');
             // Start Kafka consumption and pass the processMessage as a callback
-            await kafka.startKafkaConsumer(compactor.processMessage);
+            await kafka.startKafkaConsumer(compactor.processMessage.bind(compactor));
         } catch (error) {
             logger.error('Error starting Compactor: %o', error);
         }
