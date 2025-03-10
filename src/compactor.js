@@ -208,8 +208,7 @@ export class Compactor {
      * @returns {Promise<boolean>} false if nothing new
      */
     async #updateActivityTraces(activityState) {
-        let traceFiles = (await this.#minio.getTraces(activityState.activityId)).map((o) => o.name);
-        traceFiles.sort();
+        let traceFiles = (await this.#minio.getTraces(activityState.activityId)).map((o) => o.name).sort();
         const sha1 = sha1sums(traceFiles);
         if (sha1 === activityState.currentSha1) {
             logger.debug(`Nothing to do for activity %s`, activityState.activityId);
@@ -329,30 +328,9 @@ export class Compactor {
             logger.warn("Already consumed: %s", keyWithoutBucket);
             return;
         }
-
-        let positionvalue=-binarySearch(activityFiles, keyWithoutBucket, true, (a,b)=> { 
-            if(typeof a == "string" && typeof b == "string" ) {
-                return a.localeCompare(b); 
-            } else {
-                return -1;
-            }
-        })-1;
-
-        const nextposition = activityFiles.length;
-
-        logger.debug(keyWithoutBucket);
-        logger.debug("positionvalue:");
-        logger.debug(positionvalue);
-        logger.debug("nextposition:");
-        logger.debug(nextposition);
-
-        if(positionvalue < nextposition) {
-            logger.warn("Not ordered. Should have been consumed before.")
-        }
-
-        activityFiles.splice(nextposition, 0, keyWithoutBucket);
-        logger.debug(activityFiles);
-        const sha1 = sha1sums(activityFiles);
+        const newActivityFiles= await activityState.insertOrdered([keyWithoutBucket]);
+        logger.debug(newActivityFiles);
+        const sha1 = sha1sums(newActivityFiles);
         await this.#updateActivityTracesFromPath(activityState, keyWithoutBucket, sha1);
         logger.debug(activityState);
 

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { copyNoOverwrite, ensureDirectoryStructureExists, fileExists, forceRemove, listFiles, mktempPath, rename, withFile } from './utils/file.js';
 import { areArraysEqual, isStringArray, getFirstAndLastX } from './utils/array.js';
 import { duration, epoch, formatDuration, now, parseDate } from './utils/date.js';
-import { diffArray, diffSet } from './utils/misc.js';
+import { binarySearch, diffArray, diffSet } from './utils/misc.js';
 
 /** @typedef {import('./config.js').CompactorOptions} CompactorOptions */
 
@@ -63,6 +63,39 @@ export class ActivityCompactionState {
 		await this.#copyFromRemoteFilesState();
 
 		files = await this.#loadLocalFilesState();
+		return files;
+	}
+
+	/**
+	 * 
+	 * @param {string[]} files 
+	 * @returns {Promise<string[]>}
+	 */
+	async insertOrdered(files) {
+		let activityFiles = await this.files();
+		for(let file in files) {
+			let positionvalue=-binarySearch(activityFiles, file, true, (a,b)=> { 
+				if(typeof a == "string" && typeof b == "string" ) {
+					return a.localeCompare(b); 
+				} else {
+					return -1;
+				}
+			})-1;
+
+			const nextposition = activityFiles.length;
+			logger.info(file);
+			logger.info("positionvalue:");
+			logger.info(positionvalue);
+			logger.info("nextposition:");
+			logger.info(nextposition);
+			
+			if(positionvalue < nextposition) {
+				logger.warn("Not ordered. Should have been consumed before.")
+			}
+			
+			activityFiles.splice(nextposition, 0, file);
+			logger.info(activityFiles);
+		}
 		return files;
 	}
 
@@ -437,12 +470,11 @@ export class ActivityCompactionState {
 			const currentFilesStatePath = this.#filesStateLocalPath();
 			await copyNoOverwrite(currentFilesStatePath, tmpPath);
 		}
+		const stateFiles = await this.insertOrdered(filesToAdd);
 		const withFilesState = withFile(tmpPath, 'a');
-		await withFilesState(async (filesState) => {
-			for (const line of filesToAdd) {
-				await filesState.write(line+'\n');
-			}
-		});
+		await withFilesState(async (file) => {
+			await file.writeFile(stateFiles.join("\n"));
+		})
 		await rename(tmpPath, filesStatePath, this.#opts.copyInsteadRename);
 	}
 
