@@ -558,11 +558,29 @@ export class CompactorState {
 	#version;
 
 	async init() {
-		let loaded = await this.#loadLocalState();
-		if (loaded) return;
-		loaded = await this.#loadRemoteState();
-		if (!loaded) {
+		logger.debug("Loading Local State...")
+		let localStateLoaded = await this.#loadLocalState(false);
+		let localStateVersion=this.#version;
+		logger.debug("Loading Remote State...");
+		let remoteStateLoaded = await this.#loadRemoteState(true);
+		let remoteStateVersion=this.#version;
+		if (!localStateLoaded && !remoteStateLoaded) {
 			logger.warn('Seems that we are running for the first time');
+			return;
+		}
+		logger.debug(`Local version : ${localStateVersion } - Remote version : ${remoteStateVersion }`)
+		if(remoteStateVersion > localStateVersion) {
+			logger.debug("The version in remote is more uptodate. Taking this version.");
+			await this.#loadRemoteState(false);
+			return;
+		} else if(remoteStateVersion < localStateVersion) {
+			logger.debug("The version in local is more uptodate. Taking this version.");
+			await this.#loadLocalState(false);
+			await this.#copyStateToRemote();
+			return;
+		} else {
+			logger.debug("The versions in local and in remote are the same.");
+			return;
 		}
 	}
 
@@ -617,10 +635,16 @@ export class CompactorState {
 	}
 
 	/**
+	 * @param {boolean } loadTemp
 	 * @return {Promise<boolean>} true if config has been loaded
 	 */
-	async #loadLocalState() {
-		const path = this.#localPath;
+	async #loadLocalState(loadTemp) {
+		let path;
+		if(loadTemp) {
+			path = this.#localTempPath;
+		} else {
+			path = this.#localPath;
+		}
 		const withState = withFile(path);
 		const result = await withState(async (file) => {
 			const content = await file.readFile('utf-8');
@@ -638,13 +662,25 @@ export class CompactorState {
 		return path;
 	}
 
+	get #localTempPath () {
+		const path = join(this.#opts.localStatePath, `temp_${STATE_FILENAME}`);
+		return path;
+	}
+
 	/**
+	 * @param {boolean} loadTemp
 	 * @return {Promise<boolean>} true if config has been loaded
 	 */
-	async #loadRemoteState() {
+	async #loadRemoteState(loadTemp) {
+		let path;
+		if(loadTemp) {
+			path = this.#localTempPath;
+		} else {
+			path = this.#localPath;
+		}
 		try {
-			await this.#minio.copyFromRemoteFile(this.#remotePath, this.#localPath);
-			return this.#loadLocalState();
+			await this.#minio.copyFromRemoteFile(this.#remotePath, path);
+			return this.#loadLocalState(loadTemp);
 		} catch (e) {
 			logger.warn(e);
 		}
