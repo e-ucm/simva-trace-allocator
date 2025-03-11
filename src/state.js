@@ -4,13 +4,14 @@ import { join } from 'node:path';
 import { copyNoOverwrite, ensureDirectoryStructureExists, fileExists, forceRemove, listFiles, mktempPath, rename, withFile } from './utils/file.js';
 import { areArraysEqual, isStringArray, getFirstAndLastX } from './utils/array.js';
 import { duration, epoch, formatDuration, now, parseDate } from './utils/date.js';
-import { diffArray, diffSet } from './utils/misc.js';
+import { binarySearch, diffArray, diffSet } from './utils/misc.js';
 
 /** @typedef {import('./config.js').CompactorOptions} CompactorOptions */
 
 /**
  * @typedef SerializedCompactorState
  * @property {string} lastGC
+ * @property {string} version
  * @property {Map<string, ActivityCompactionState>} states
  */
 
@@ -26,7 +27,6 @@ export class ActivityCompactionState {
 		this.activityId = activityId;
 		this.#opts = opts;
 		this.#minio = minio;
-		this.owners = [];
 		this.currentSha1 = null;
 		this.lastUpdate = epoch();
 	}
@@ -39,9 +39,6 @@ export class ActivityCompactionState {
 
 	/** @type {string} */
 	activityId;
-
-	/** @type {string[]} */
-	owners;
 
 	/** @type {string} */
 	currentSha1;
@@ -67,6 +64,41 @@ export class ActivityCompactionState {
 
 		files = await this.#loadLocalFilesState();
 		return files;
+	}
+
+	/**
+	 * 
+	 * @param {string[]} files 
+	 * @returns {Promise<string[]>}
+	 */
+	async insertOrdered(files) {
+		let activityFiles = await this.files();
+		for(let i in files) {
+			let file = files[i];
+			let positionvalue=-binarySearch(activityFiles, file, true, (a,b)=> { 
+				if(typeof a == "string" && typeof b == "string" ) {
+					return a.localeCompare(b); 
+				} else {
+					return -1;
+				}
+			})-1;
+
+			const nextposition = activityFiles.length;
+			logger.debug(file);
+			logger.debug("positionvalue:");
+			logger.debug(positionvalue);
+			logger.debug("nextposition:");
+			logger.debug(nextposition);
+			
+			if(positionvalue < nextposition) {
+				logger.warn("Not ordered. Should have been consumed before.")
+				activityFiles.splice(positionvalue, 0, file);
+			} else {
+				activityFiles.push(file);
+			}
+			logger.debug(activityFiles);
+		}
+		return activityFiles;
 	}
 
 	async garbageCollect() {
@@ -294,6 +326,17 @@ export class ActivityCompactionState {
 		return path;
 	}
 
+	/**
+	 * 
+	 * @returns 
+	 */
+	#outputRemotePath() {
+		const path = join(this.#opts.minio.outputs_dir, this.activityId,this.#opts.minio.traces_file);
+		return path;
+	}
+
+	
+
 	async #copyFromRemoteFilesState() {
 		const remotePath = this.#filesStateRemotePath();
 		const localPath = this.#filesStateLocalPath();
@@ -400,6 +443,13 @@ export class ActivityCompactionState {
 	}
 
 	/**
+	 * @returns
+	 */
+	get remoteOutputPath() {
+		return this.#outputRemotePath();
+	}
+
+	/**
 	 * 
 	 * @param {string} [sha1]
 	 * @returns 
@@ -418,16 +468,11 @@ export class ActivityCompactionState {
 	async #saveLocalFilesState(filesToAdd, sha1) {
 		const filesStatePath = this.#filesStateLocalPath(sha1);
 		const tmpPath = mktempPath();
-		if (this.currentSha1 !== null && this.currentSha1 !== sha1) {
-			const currentFilesStatePath = this.#filesStateLocalPath();
-			await copyNoOverwrite(currentFilesStatePath, tmpPath);
-		}
+		const stateFiles = (await this.insertOrdered(filesToAdd)).join('\r\n');
 		const withFilesState = withFile(tmpPath, 'a');
-		await withFilesState(async (filesState) => {
-			for (const line of filesToAdd) {
-				await filesState.write(line+'\n');
-			}
-		});
+		await withFilesState(async (file) => {
+			await file.writeFile(stateFiles);
+		})
 		await rename(tmpPath, filesStatePath, this.#opts.copyInsteadRename);
 	}
 
@@ -495,6 +540,7 @@ export class CompactorState {
 		this.#minio = minio;
 		this.#states = new Map();
 		this.#lastGC = null;
+		this.#version = null;
 	}
 	/** @type {CompactorOptions} opts */
 	#opts;
@@ -508,12 +554,33 @@ export class CompactorState {
 	/** @type {Date} */
 	#lastGC;
 
+	/** @type {Number} */
+	#version;
+
 	async init() {
-		let loaded = await this.#loadLocalState();
-		if (loaded) return;
-		loaded = await this.#loadRemoteState();
-		if (!loaded) {
+		logger.debug("Loading Local State...")
+		let localStateLoaded = await this.#loadLocalState(false);
+		let localStateVersion=this.#version;
+		logger.debug("Loading Remote State...");
+		let remoteStateLoaded = await this.#loadRemoteState(true);
+		let remoteStateVersion=this.#version;
+		if (!localStateLoaded && !remoteStateLoaded) {
 			logger.warn('Seems that we are running for the first time');
+			return;
+		}
+		logger.debug(`Local version : ${localStateVersion } - Remote version : ${remoteStateVersion }`)
+		if(remoteStateVersion > localStateVersion) {
+			logger.debug("The version in remote is more uptodate. Taking this version.");
+			await this.#loadRemoteState(false);
+			return;
+		} else if(remoteStateVersion < localStateVersion) {
+			logger.debug("The version in local is more uptodate. Taking this version.");
+			await this.#loadLocalState(false);
+			await this.#copyStateToRemote();
+			return;
+		} else {
+			logger.debug("The versions in local and in remote are the same.");
+			return;
 		}
 	}
 
@@ -568,10 +635,16 @@ export class CompactorState {
 	}
 
 	/**
+	 * @param {boolean } loadTemp
 	 * @return {Promise<boolean>} true if config has been loaded
 	 */
-	async #loadLocalState() {
-		const path = this.#localPath;
+	async #loadLocalState(loadTemp) {
+		let path;
+		if(loadTemp) {
+			path = this.#localTempPath;
+		} else {
+			path = this.#localPath;
+		}
 		const withState = withFile(path);
 		const result = await withState(async (file) => {
 			const content = await file.readFile('utf-8');
@@ -589,13 +662,25 @@ export class CompactorState {
 		return path;
 	}
 
+	get #localTempPath () {
+		const path = join(this.#opts.localStatePath, `temp_${STATE_FILENAME}`);
+		return path;
+	}
+
 	/**
+	 * @param {boolean} loadTemp
 	 * @return {Promise<boolean>} true if config has been loaded
 	 */
-	async #loadRemoteState() {
+	async #loadRemoteState(loadTemp) {
+		let path;
+		if(loadTemp) {
+			path = this.#localTempPath;
+		} else {
+			path = this.#localPath;
+		}
 		try {
-			await this.#minio.copyFromRemoteFile(this.#remotePath, this.#localPath);
-			return this.#loadLocalState();
+			await this.#minio.copyFromRemoteFile(this.#remotePath, path);
+			return this.#loadLocalState(loadTemp);
 		} catch (e) {
 			logger.warn(e);
 		}
@@ -622,11 +707,14 @@ export class CompactorState {
 			}
 		}
 		this.#lastGC = serializedState.lastGC !== null ? new Date(Date.parse(serializedState.lastGC)) : null;
+		this.#version = serializedState.version !== null ? parseInt(serializedState.version) : 0 ;
 	}
 
 	async save() {
+		this.#version =this.#version+1;
 		/** @type {SerializedCompactorState} */
 		const serializedState = {
+			version: this.#version.toString(),
 			states: this.#states,
 			lastGC: this.#lastGC !== null ? this.#lastGC.toISOString() : null
 		}
@@ -719,8 +807,7 @@ function replacer(key, value) {
 			value: {
 				activityId : value.activityId,
 				lastUpdate : value.lastUpdate.toISOString(),
-				currentSha1 : value.currentSha1,
-				owners : value.owners
+				currentSha1 : value.currentSha1
 			}
 		}
 	}
@@ -743,7 +830,6 @@ function withContextReviver(opts, minio) {
 				const activityState = new ActivityCompactionState(value.activityId, opts, minio);
 				activityState.lastUpdate = parseDate(value.lastUpdate);
 				activityState.currentSha1 = value.currentSha1;
-				activityState.owners = value.owners;
 				return activityState;
 			}
 		}

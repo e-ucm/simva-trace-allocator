@@ -2,10 +2,8 @@ import { now, duration, formatDuration } from './utils/date.js';
 import { logger } from './logger.js';
 import { MinioClient } from './minio.js'; 
 import { SimvaClient } from './simva.js';
-import { KafkaClient } from './kafka.js';
 import { getState } from './state.js';
 import { binarySearch, diffArray } from './utils/misc.js';
-import { config } from './config.js';
 import { sha1sums } from './utils/sha.js';
 
 /** @typedef {import('./config.js').CompactorOptions} CompactorOptions */
@@ -29,7 +27,6 @@ export class Compactor {
         this.#opts = opts;
         this.#minio = new MinioClient(opts.minio);
         this.#simva = new SimvaClient(opts.simva);
-        this.#kafka = new KafkaClient(opts.kafka);
         this.shouldExit = false;
         this.status = {
             processing: false,
@@ -43,9 +40,6 @@ export class Compactor {
 
     /** @type {MinioClient} */
     #minio;
-
-    /** @type {KafkaClient} */
-    #kafka;
 
     /** @type {SimvaClient} */
     #simva;
@@ -97,9 +91,6 @@ export class Compactor {
 
         logger.info(`Known %d activities, received %d`, state.size, activities.length);
 
-        const outputDir = this.#opts.minio.outputs_dir;
-        const tracesFilename = this.#opts.minio.traces_file;
-
         this.status.total = activities.length;
         const inconsistent = [];
         for(let idx=0; idx < activities.length; idx++) {
@@ -118,11 +109,11 @@ export class Compactor {
             }
 
             let consistent = await activityState.checkConsistency();
-            const remotePath = `${outputDir}/${activityState.activityId}/${tracesFilename}`;
-                if (! await this.#minio.fileExists(remotePath) ) {
-                    logger.warn('Compact file for activity \'%s\' not found: %s', activityState.activityId, remotePath);
-                    consistent = false;
-                }
+            const remotePath = activityState.remoteOutputPath;
+            if (! await this.#minio.fileExists(remotePath) ) {
+                logger.warn('Compact file for activity \'%s\' not found: %s', activityState.activityId, remotePath);
+                consistent = false;
+            }
             if (!consistent) {
                 inconsistent.push(activity._id);
             }
@@ -147,6 +138,7 @@ export class Compactor {
         let activitiesToGo = await this.#garbageCollectActivities(state, activities);
 
         this.status.total = activities.length;
+        let leastoneUpdated=false;
         for(let idx=0; idx < activities.length; idx++) {
             if (this.shouldExit) {
                 break;
@@ -163,13 +155,17 @@ export class Compactor {
             }
             const updated = await this.#updateActivityTraces(activityState);
             if (!updated) continue;
+            
+            leastoneUpdated=updated;
             await this.#distributeTrace(activityState);
-    
+
             if (activities.length % 5) {
                 await state.save();
             }
         }
-        await state.save();
+        if(leastoneUpdated) {
+            await state.save();
+        }
     }
 
     /**
@@ -217,8 +213,7 @@ export class Compactor {
      * @returns {Promise<boolean>} false if nothing new
      */
     async #updateActivityTraces(activityState) {
-        let traceFiles = (await this.#minio.getTraces(activityState.activityId)).map((o) => o.name);
-        traceFiles.sort();
+        let traceFiles = (await this.#minio.getTraces(activityState.activityId)).map((o) => o.name).sort();
         const sha1 = sha1sums(traceFiles);
         if (sha1 === activityState.currentSha1) {
             logger.debug(`Nothing to do for activity %s`, activityState.activityId);
@@ -248,12 +243,11 @@ export class Compactor {
     async #distributeTrace(activityState) {
         const localStatePath = activityState.localStatePath;
         const remoteStatePath = activityState.remoteStatePath;
-        const outputDir = this.#opts.minio.outputs_dir;
-        const tracesFilename = this.#opts.minio.traces_file;
-        const remotePath = `${outputDir}/${activityState.activityId}/${tracesFilename}`;
+        const remotePath = activityState.remoteOutputPath;
         try {
             const metadata = {
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "Version": "1"
             };
             await this.#minio.copyToRemoteFile(localStatePath, remotePath, metadata);
             //await this.#minio.copyWithinMinIO(remoteStatePath, remotePath);
@@ -278,8 +272,8 @@ export class Compactor {
      */
     async processMessage(message) {
         // Log the received message
-        logger.info('Received message:');
-        logger.info(message.value);
+        logger.debug('Received message:');
+        logger.debug(message.value);
 
         let state = await getState(this.#opts, this.#minio);
         // Set up the delimiter and the required bucket and path values
@@ -290,20 +284,20 @@ export class Compactor {
         let tracestopicspath = `${this.#opts.minio.topics_dir}${delimiter}${this.#opts.minio.traces_topic}${delimiter}_id=`;
     
         // Log the constructed path
-        logger.info(`Trace topic path: ${tracestopicspath}`);
+        logger.debug(`Trace topic path: ${tracestopicspath}`);
     
         // Parse the message value (assuming it's a JSON string)
         let ev = JSON.parse(message.value);
         let key = ev.Key;
         
         // Log the key extracted from the message
-        logger.info(`Received Key: ${key}`);
+        logger.debug(`Received Key: ${key}`);
     
         // Remove the bucket and trace topic path from the key to get the key value
         let keyvalue = key.replace(`${bucket}${delimiter}${tracestopicspath}`, "");
         
         // Log the key value after removal
-        logger.info(`Key value without bucket and path: ${keyvalue}`);
+        logger.debug(`Key value without bucket and path: ${keyvalue}`);
     
         // Split the key value to extract activityId and filename
         let added = keyvalue.split(delimiter);
@@ -314,7 +308,7 @@ export class Compactor {
         let keyWithoutBucket = null;
     
         // If the split key has exactly 2 parts, extract activityId and filename
-        if (added.length === 2) {
+        if (added.length !== 2) {
             throw new Error('Key format is unexpected. Unable to extract activityId and filename.');
         }
         activityId = added[0];
@@ -322,49 +316,30 @@ export class Compactor {
         keyWithoutBucket = `${tracestopicspath}${activityId}${delimiter}${filename}`;
 
         // Log the extracted values
-        logger.info(`activityId: ${activityId}, filename: ${filename}, key: ${key}, keyWithoutBucket: ${keyWithoutBucket}`);
+        logger.debug(`activityId: ${activityId}, filename: ${filename}, key: ${key}, keyWithoutBucket: ${keyWithoutBucket}`);
         
         // ActivityState
         let activityState = state.get(activityId);
         if (activityState === undefined) {
-            logger.info(`New activity: %s`, activityId);
+            logger.debug(`New activity: %s`, activityId);
             activityState = await state.create(activityId);
         }
-        logger.info(activityState);
+        logger.debug(activityState);
         // compute which files need to be appended
-        const activityFiles = (await activityState.files()).sort();
-        logger.info(activityFiles);
+        const activityFiles = (await activityState.files());
+        logger.debug(activityFiles);
         
         if(activityFiles.includes(keyWithoutBucket)) {
             logger.warn("Already consumed: %s", keyWithoutBucket);
             return;
         }
-
-        let positionvalue=-binarySearch(activityFiles, keyWithoutBucket, true, (a,b)=> { 
-            if(typeof a == "string" && typeof b == "string" ) {
-                return a.localeCompare(b); 
-            } else {
-                return -1;
-            }
-        })-1;
-
-        const nextposition = activityFiles.length;
-
-        logger.info(keyWithoutBucket);
-        logger.info("positionvalue:");
-        logger.info(positionvalue);
-        logger.info("nextposition:");
-        logger.info(nextposition);
-
-        if(positionvalue < nextposition) {
-            logger.warn("Not ordered. Should have been consumed before.")
-        }
-
-        await this.#updateActivityTracesFromPath(activityState, keyWithoutBucket);
-        logger.info(activityState);
+        const newActivityFiles= await activityState.insertOrdered([keyWithoutBucket]);
+        const sha1 = sha1sums(newActivityFiles);
+        await this.#updateActivityTracesFromPath(activityState, keyWithoutBucket, sha1);
+        logger.debug(activityState);
 
         await this.#distributeTrace(activityState);
-        logger.info(activityState);
+        logger.debug(activityState);
 
         await state.save();
     }
@@ -373,37 +348,16 @@ export class Compactor {
      * Update Activity Traces From Path
      * @param {ActivityCompactionState} activityState 
      * @param {string} keyPath
+     * @param {string} sha1
      * @returns {Promise<boolean>} false if nothing new
      */
-    async #updateActivityTracesFromPath(activityState, keyPath) {
-        const sha1 = sha1sums(keyPath);
+    async #updateActivityTracesFromPath(activityState, keyPath, sha1) {
         const nowDate = now();
         const filesToAdd = [keyPath];
         logger.info(`Compacting activity %s`, activityState.activityId);
-        logger.info(filesToAdd);
+        logger.debug(filesToAdd);
         await activityState.update(filesToAdd, nowDate, sha1);
         return true;
-    }
-
-    // Method to start consuming messages using KafkaClient
-    async startKafkaConsumer() {
-        try {
-            logger.info('Compactor starting Kafka consumption...');
-            // Start Kafka consumption and pass the processMessage as a callback
-            await this.#kafka.startKafkaConsumer(this.processMessage.bind(this));
-        } catch (error) {
-            console.error('Error starting Compactor:', error);
-        }
-    }
-
-    // Method to stop consuming messages
-    async stopKafkaConsumer() {
-        try {
-            await this.#kafka.disconnect();
-            logger.info('Compactor stopped Kafka consumption.');
-        } catch (error) {
-            console.error('Error stopping Compactor:', error);
-        }
     }
     
     /**
