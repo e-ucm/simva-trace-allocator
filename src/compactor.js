@@ -138,6 +138,7 @@ export class Compactor {
         let activitiesToGo = await this.#garbageCollectActivities(state, activities);
 
         this.status.total = activities.length;
+        let leastoneUpdated=false;
         for(let idx=0; idx < activities.length; idx++) {
             if (this.shouldExit) {
                 break;
@@ -154,13 +155,17 @@ export class Compactor {
             }
             const updated = await this.#updateActivityTraces(activityState);
             if (!updated) continue;
+            
+            leastoneUpdated=updated;
             await this.#distributeTrace(activityState);
-    
+
             if (activities.length % 5) {
                 await state.save();
             }
         }
-        await state.save();
+        if(leastoneUpdated) {
+            await state.save();
+        }
     }
 
     /**

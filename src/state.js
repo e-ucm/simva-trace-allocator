@@ -11,7 +11,7 @@ import { binarySearch, diffArray, diffSet } from './utils/misc.js';
 /**
  * @typedef SerializedCompactorState
  * @property {string} lastGC
- * @property {number} version
+ * @property {string} version
  * @property {Map<string, ActivityCompactionState>} states
  */
 
@@ -671,14 +671,14 @@ export class CompactorState {
 			}
 		}
 		this.#lastGC = serializedState.lastGC !== null ? new Date(Date.parse(serializedState.lastGC)) : null;
-		this.#version = serializedState.version !== null ? serializedState.version : null ;
+		this.#version = serializedState.version !== null ? parseInt(serializedState.version) : 0 ;
 	}
 
 	async save() {
-		this.#version = this.#version !== null ? 0 : this.#version+1;
+		this.#version =this.#version+1;
 		/** @type {SerializedCompactorState} */
 		const serializedState = {
-			version: this.#version,
+			version: this.#version.toString(),
 			states: this.#states,
 			lastGC: this.#lastGC !== null ? this.#lastGC.toISOString() : null
 		}
