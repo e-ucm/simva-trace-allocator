@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node ./src/index.js",
-    "dev": "nodemon --nolazy --inspect=0.0.0.0:9229 --prof --max-old-space-size=1024 ./src/index.js",
-    "start:debug": "nodemon --nolazy --inspect-brk=0.0.0.0:9229 --prof ./src/index.js"
+    "dev": "nodemon --nolazy --inspect=0.0.0.0:9229 --max-old-space-size=1024 ./src/index.js",
+    "dev:profiling": "nodemon --nolazy --inspect-brk=0.0.0.0:9229 --prof --max-old-space-size=1024 ./src/index.js"
   },
   "engines": {
     "node": ">=20 <24"
