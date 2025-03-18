@@ -707,7 +707,7 @@ export class CompactorState {
 			}
 		}
 		this.#lastGC = serializedState.lastGC !== null ? new Date(Date.parse(serializedState.lastGC)) : null;
-		this.#version = serializedState.version !== null ? parseInt(serializedState.version) : 0 ;
+		this.#version = serializedState.version !== null ? (serializedState.version !== "NaN" ? parseInt(serializedState.version) : 0) : 0 ;
 	}
 
 	async save() {
