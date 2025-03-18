@@ -226,7 +226,8 @@ export class Compactor {
         const nowDate = now();
         const elapsedTime = duration(activityState.lastUpdate, nowDate);
         let filesToConsume=[];
-        for(let file in filesToAdd) {
+        for(let index in filesToAdd) {
+            let file=filesToAdd[index];
             logger.debug(file);
             if(activityFiles.includes(file)) {
                 logger.warn("Already consumed: %s", file);
