@@ -225,14 +225,23 @@ export class Compactor {
         const { added: filesToAdd } = diffArray(activityFiles, traceFiles);
         const nowDate = now();
         const elapsedTime = duration(activityState.lastUpdate, nowDate);
-        if (filesToAdd.length < this.#opts.batchSize && elapsedTime < this.#opts.maxDelay) {
+        let filesToConsume=[];
+        for(let file in filesToAdd) {
+            logger.debug(file);
+            if(activityFiles.includes(file)) {
+                logger.warn("Already consumed: %s", file);
+            } else {
+                filesToConsume.push(file);
+            }
+        }
+        if (filesToConsume.length < this.#opts.batchSize && elapsedTime < this.#opts.maxDelay) {
             const durationStr = formatDuration(elapsedTime);
-            logger.debug(`Update postponed elapsedTime=%s, batchSize=%d for activity %s`, durationStr, filesToAdd.length, activityState.activityId);
+            logger.debug(`Update postponed elapsedTime=%s, batchSize=%d for activity %s`, durationStr, filesToConsume.length, activityState.activityId);
             return false;
         }
 
         logger.info(`Compacting activity %s`, activityState.activityId);
-        await activityState.update(filesToAdd, nowDate, sha1);
+        await activityState.update(filesToConsume, nowDate, sha1);
         return true;
     }
 
