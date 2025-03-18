@@ -242,8 +242,12 @@ export class Compactor {
         }
 
         logger.info(`Compacting activity %s`, activityState.activityId);
-        await activityState.update(filesToConsume, nowDate, sha1);
-        return true;
+        if(filesToConsume.length > 0) {
+            await activityState.update(filesToConsume, nowDate, sha1);
+            return true;
+        } else {
+            return false;
+        }
     }
 
     /**
