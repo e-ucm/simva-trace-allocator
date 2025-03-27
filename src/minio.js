@@ -126,67 +126,6 @@ export class MinioClient {
 
     /**
      * 
-     * @param {string} objectName 
-     * @param {string} uploadId
-     * @returns {Promise<void>}
-     */
-    async abortMultipartUpload(objectName, uploadId) {
-        await this.#minio.abortMultipartUpload(this.#opts.bucket, objectName, uploadId);
-    }
-
-    /**
-     * 
-     * @param {MultipartUploadResult[]} list
-     * @returns {Promise<void>}
-     */
-    async abortMultipartUploads(list) {
-        for (const item of list) {
-            try {
-                await this.#minio.abortMultipartUpload(this.#opts.bucket, item.key, item.uploadId);
-                logger.info(`Aborted upload: ${item.key} (Upload ID: ${item.uploadId})`);
-            } catch (error) {
-                logger.error(`Failed to abort ${item.key}:`, error);
-            }
-        }
-    }
-    
-
-    /**
-     * 
-     * @returns {Promise<MultipartUploadResult[]>}
-     */
-    async listMultipartUploads() {
-        return new Promise((resolve, reject) => {
-          const uploads = [];
-          
-          const stream = this.#minio.listIncompleteUploads(this.#opts.bucket, "", true);
-          
-          stream.on("data", (obj) => {
-            uploads.push(obj);
-            logger.info("Active Upload:", obj);
-          });
-      
-          stream.on("end", () => {
-            resolve(uploads);
-          });
-      
-          stream.on("error", (err) => {
-            reject(err);
-          });
-        });
-    }
-
-    async listV2MultipartUploads() {
-        this.#minio.listIncompleteUploads(this.#opts.bucket, "", true)
-          .on("data", async (obj) => {
-            logger.info(obj);
-            await this.#minio.abortMultipartUpload(this.#opts.bucket, obj.key, obj.uploadId);
-          })
-          .on("error", (err) => logger.error(err));
-      }
-
-    /**
-     * 
      * @param {string} file 
      * @param {string} content 
      * @returns {Promise<FPutResult>}
@@ -249,9 +188,7 @@ export class MinioClient {
             destinationPath,
             `/${this.#opts.bucket}/${sourcePath}`
           );
-      }
-      
-
+    }
 }
 
 function streamToString(stream) {
