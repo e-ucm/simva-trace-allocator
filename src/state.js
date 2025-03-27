@@ -626,6 +626,7 @@ export class CompactorState {
 			} catch (error) {
 				logger.error('Could not garbage collect: %s', activity.activityId);
 				logger.error(error);
+				throw error;
 			}
 		}
 		const finishTime = now();
@@ -683,6 +684,7 @@ export class CompactorState {
 			return this.#loadLocalState(loadTemp);
 		} catch (e) {
 			logger.warn(e);
+			throw e;
 		}
 		return false;
 	}
@@ -704,6 +706,7 @@ export class CompactorState {
 			} catch (error) {
 				logger.error('Could not initialize activity: ', activity.activityId);
 				logger.error(error);
+				throw error;
 			}
 		}
 		this.#lastGC = serializedState.lastGC !== null ? new Date(Date.parse(serializedState.lastGC)) : null;

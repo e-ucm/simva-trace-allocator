@@ -65,6 +65,7 @@ export class Compactor {
             } catch (e) {
                 logger.error(e);
                 logger.error('####### ERROR WHILE PROCESSING THE TRACES. !!!!!!');
+                throw e;
             }
             this.status.processing = false;
         } else {
@@ -196,6 +197,7 @@ export class Compactor {
                 } catch(error) {
                     logger.error('Could not remove activity: %s', activityId);
                     logger.error(error);
+                    throw error;
                 }
             }
             logger.info('Activities to removed OK.');
@@ -269,6 +271,7 @@ export class Compactor {
         } catch (error) {
             logger.error("Copy failed:");
             logger.error(error);
+            throw error;
         }
         logger.info(`Copied compacted file for activity %s`, activityState.activityId);
     }
