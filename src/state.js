@@ -528,6 +528,22 @@ export class ActivityCompactionState {
 					logger.error(error);
 					throw error;
 				}
+			} else {
+				let previousRemoteStatePath=remoteStatePath.replace(".json",".txt");
+				if(await this.#minio.fileExists(previousRemoteStatePath)) {
+					try {
+						await this.#minio.copyFromRemoteFile(previousRemoteStatePath, localStatePath);
+						let metadata= {
+							"Content-Type": "application/json",
+							"Version": "1"
+						};
+						await this.#minio.copyToRemoteFile(localStatePath, remoteStatePath, metadata);
+					} catch(error) {
+						logger.error("Copy failed:");
+						logger.error(error);
+						throw error;
+					}
+				}
 			}
 		}
 		if (! await fileExists(localStatePath)) {
