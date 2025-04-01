@@ -261,15 +261,15 @@ export class Compactor {
         const remoteStatePath = activityState.remoteStatePath;
         const remotePath = activityState.remoteOutputPath;
         try {
-            const metadata = {
-                "Content-Type": "application/json",
-                "Version": "1"
-            };
-            await this.#minio.copyToRemoteFile(localStatePath, remotePath, metadata);
-            //await this.#minio.copyWithinMinIO(remoteStatePath, remotePath);
+            //const metadata = {
+            //    "Content-Type": "application/json",
+            //    "Version": "1"
+            //};
+            //await this.#minio.copyToRemoteFile(localStatePath, remotePath, metadata);
+            await this.#minio.copyWithinMinIO(remoteStatePath, remotePath);
             logger.info("Object copied successfully!");
         } catch (error) {
-            logger.error("Copy failed:");
+            logger.error("Copy compacted file failed:");
             logger.error(error);
             throw error;
         }
