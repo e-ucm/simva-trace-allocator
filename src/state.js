@@ -424,7 +424,7 @@ export class ActivityCompactionState {
 	 */
 	#stateLocalPath(sha1) {
 		sha1 = sha1 || this.currentSha1;
-		const path = join(this.#opts.localStatePath, this.activityId, `${sha1}-state.txt`);
+		const path = join(this.#opts.localStatePath, this.activityId, `${sha1}-state.json`);
 		return path;
 	}
 
@@ -456,7 +456,7 @@ export class ActivityCompactionState {
 	 */
 	#stateRemotePath(sha1) {
 		sha1 = sha1 || this.currentSha1;
-		return `${this.#opts.remoteStatePath}/${this.activityId}/${sha1}-state.txt`;
+		return `${this.#opts.remoteStatePath}/${this.activityId}/${sha1}-state.json`;
 	}
 
 	/**
@@ -493,7 +493,11 @@ export class ActivityCompactionState {
 	async #copyToRemoteState(sha1) {
 		const localPath = this.#stateLocalPath(sha1);
 		const remotePath = this.#stateRemotePath(sha1);
-		await this.#minio.copyToRemoteFile(localPath, remotePath);
+		let metadata={
+			"Content-Type": "application/json",
+			"Version": "1"
+		};
+		await this.#minio.copyToRemoteFile(localPath, remotePath, metadata);
 	}
 
 	async checkConsistency() {
@@ -505,6 +509,27 @@ export class ActivityCompactionState {
 		let consistent = true;
 		const localStatePath = this.#stateLocalPath();
 		const localFilesStatePath = this.#filesStateLocalPath();
+
+		const remoteStatePath = this.#stateRemotePath();
+		const remoteFilesStatePath = this.#filesStateRemotePath();
+
+		if (! await fileExists(localStatePath)) {
+			let previousLocalStatePath=localStatePath.replace(".json",".txt");
+			if(await fileExists(previousLocalStatePath)) {
+				try {
+					await rename(previousLocalStatePath, localStatePath, this.#opts.copyInsteadRename);
+					let metadata= {
+						"Content-Type": "application/json",
+						"Version": "1"
+					};
+					await this.#minio.copyToRemoteFile(localStatePath, remoteStatePath, metadata);
+				} catch(error) {
+				    logger.error("Copy failed:");
+					logger.error(error);
+					throw error;
+				}
+			}
+		}
 		if (! await fileExists(localStatePath)) {
 			logger.warn('Local state file for activity \'%s\' not found: %s', this.activityId, localStatePath);
 			consistent = false;
@@ -513,8 +538,7 @@ export class ActivityCompactionState {
 			logger.warn('Local files state for activity \'%s\' not found: %s', this.activityId, localFilesStatePath);
 			consistent = false;
 		}
-		const remoteStatePath = this.#stateRemotePath();
-		const remoteFilesStatePath = this.#filesStateRemotePath();
+		
 		if (! await this.#minio.fileExists(remoteStatePath)) {
 			logger.warn('Remote state file for activity \'%s\' not found: %s', this.activityId, remoteStatePath);
 			consistent = false;

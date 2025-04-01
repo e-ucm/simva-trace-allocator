@@ -265,8 +265,8 @@ export class Compactor {
                 "Content-Type": "application/json",
                 "Version": "1"
             };
-            //await this.#minio.copyToRemoteFile(localStatePath, remotePath, metadata);
-            await this.#minio.copyWithinMinIO(remoteStatePath, remotePath);
+            await this.#minio.copyToRemoteFile(localStatePath, remotePath, metadata);
+            //await this.#minio.copyWithinMinIO(remoteStatePath, remotePath);
             logger.info("Object copied successfully!");
         } catch (error) {
             logger.error("Copy failed:");
