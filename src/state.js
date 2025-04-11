@@ -680,22 +680,28 @@ export class CompactorState {
 	 * @return {Promise<boolean>} true if config has been loaded
 	 */
 	async #loadLocalState(loadTemp) {
-		let path;
-		if(loadTemp) {
-			path = this.#localTempPath;
-		} else {
-			path = this.#localPath;
+		try {
+			let path;
+			if(loadTemp) {
+				path = this.#localTempPath;
+			} else {
+				path = this.#localPath;
+			}
+			const withState = withFile(path);
+			const result = await withState(async (file) => {
+				const content = await file.readFile('utf-8');
+				await this.#initState(content);
+				return true;
+			}, false);
+			if (result !== undefined) {
+				return result;
+			}
+			return false;
+		} catch(e) {
+			logger.warn(e);
+			return false;
 		}
-		const withState = withFile(path);
-		const result = await withState(async (file) => {
-			const content = await file.readFile('utf-8');
-			await this.#initState(content);
-			return true;
-		}, false);
-		if (result !== undefined) {
-			return result;
-		}
-		return false;
+		
 	}
 
 	get #localPath () {
@@ -724,9 +730,8 @@ export class CompactorState {
 			return this.#loadLocalState(loadTemp);
 		} catch (e) {
 			logger.warn(e);
-			throw e;
+			return false;
 		}
-		return false;
 	}
 
 	get #remotePath() {
