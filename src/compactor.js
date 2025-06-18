@@ -88,7 +88,7 @@ export class Compactor {
     async #checkConsistency() {
         let state = await getState(this.#opts, this.#minio);
 
-        let activities = await this.#simva.getActivities({ type: ['gameplay', 'miniokafka', 'rageminio'] });
+        let activities = await this.#simva.getActivities({ type: ['gameplay', 'manual', 'limesurvey', 'miniokafka', 'rageminio'] });
 
         logger.info(`Known %d activities, received %d`, state.size, activities.length);
 
@@ -132,7 +132,7 @@ export class Compactor {
     async #compactActivities() {
         let state = await getState(this.#opts, this.#minio);
 
-        let activities = await this.#simva.getActivities({ type: ['gameplay', 'miniokafka', 'rageminio'] });
+        let activities = await this.#simva.getActivities({ type: ['gameplay', 'manual', 'limesurvey', 'miniokafka', 'rageminio'] });
 
         logger.info(`Known %d activities, received %d`, state.size, activities.length);
 
