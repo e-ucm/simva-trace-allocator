@@ -1,30 +1,40 @@
-FROM node:22.14.0-bullseye
+# ---------------------------------------
+# Base
+# ---------------------------------------
+FROM timbru31/node-alpine-git:22 AS base
 
-# Install ca-certificates and update them
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates && \
-    update-ca-certificates && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
 
-RUN mkdir -p /home/node/app/node_modules && chown -R node:node /home/node/app
+# Common dependencies
+RUN apk add --no-cache curl ca-certificates bash
 
-# Set the working directory
-WORKDIR /home/node/app
+FROM base AS deps
 
-COPY --chown=node:node package*.json ./
+COPY --chown=node:node package.json package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+
+FROM deps AS dev
 
 RUN npm install -g clinic
+RUN chown -R node:node /app/node_modules
+
+USER node
+EXPOSE 3050
+
+# Default CMD, can be overridden by docker-compose
+CMD [ "npm", "run", "dev" ]
+
+FROM node:22-alpine AS prod
+
+WORKDIR /app
+
+COPY --chown=node:node --from=deps /app/node_modules ./node_modules
+COPY --chown=node:node ./src ./src
+COPY --chown=node:node ./jsconfig.json ./jsconfig.json
 
 USER node
 
-RUN npm install
-
-# Copy the current directory contents into the container at /app
-COPY --chown=node:node . .
-
-RUN mkdir -p /home/node/logs 
-
-RUN chown -R node:node /home/node/logs
-
+# Make port 3050 available to the world outside this container
+EXPOSE 3050
 
 CMD [ "npm", "start" ]
