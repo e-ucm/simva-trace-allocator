@@ -2,10 +2,9 @@ import { now, duration, formatDuration } from './utils/date.js';
 import { logger } from './logger.js';
 import { MinioClient } from './minio.js'; 
 import { SimvaClient } from './simva.js';
-import { KafkaClient } from './kafka.js';
 import { getState } from './state.js';
-import { createHash } from 'node:crypto';
 import { binarySearch, diffArray } from './utils/misc.js';
+import { sha1sums } from './utils/sha.js';
 
 /** @typedef {import('./config.js').CompactorOptions} CompactorOptions */
 /** @typedef {import('./simva.js').Activity} Activity */
@@ -28,7 +27,6 @@ export class Compactor {
         this.#opts = opts;
         this.#minio = new MinioClient(opts.minio);
         this.#simva = new SimvaClient(opts.simva);
-        this.#kafka = new KafkaClient(opts.kafka);
         this.shouldExit = false;
         this.status = {
             processing: false,
@@ -42,9 +40,6 @@ export class Compactor {
 
     /** @type {MinioClient} */
     #minio;
-
-    /** @type {KafkaClient} */
-    #kafka;
 
     /** @type {SimvaClient} */
     #simva;
@@ -70,6 +65,7 @@ export class Compactor {
             } catch (e) {
                 logger.error(e);
                 logger.error('####### ERROR WHILE PROCESSING THE TRACES. !!!!!!');
+                throw e;
             }
             this.status.processing = false;
         } else {
@@ -92,12 +88,9 @@ export class Compactor {
     async #checkConsistency() {
         let state = await getState(this.#opts, this.#minio);
 
-        let activities = await this.#simva.getActivities({ type: ['gameplay', 'miniokafka', 'rageminio'] });
+        let activities = await this.#simva.getActivities({ type: ['gameplay', 'manual', 'limesurvey', 'miniokafka', 'rageminio'] });
 
         logger.info(`Known %d activities, received %d`, state.size, activities.length);
-
-        const outputDir = this.#opts.minio.outputs_dir;
-        const tracesFilename = this.#opts.minio.traces_file;
 
         this.status.total = activities.length;
         const inconsistent = [];
@@ -117,11 +110,11 @@ export class Compactor {
             }
 
             let consistent = await activityState.checkConsistency();
-            const remotePath = `${outputDir}/${activityState.activityId}/${tracesFilename}`;
-                if (! await this.#minio.fileExists(remotePath) ) {
-                    logger.warn('Compact file for activity \'%s\' not found: %s', activityState.activityId, remotePath);
-                    consistent = false;
-                }
+            const remotePath = activityState.remoteOutputPath;
+            if (! await this.#minio.fileExists(remotePath) ) {
+                logger.warn('Compact file for activity \'%s\' not found: %s', activityState.activityId, remotePath);
+                consistent = false;
+            }
             if (!consistent) {
                 inconsistent.push(activity._id);
             }
@@ -139,13 +132,14 @@ export class Compactor {
     async #compactActivities() {
         let state = await getState(this.#opts, this.#minio);
 
-        let activities = await this.#simva.getActivities({ type: ['gameplay', 'miniokafka', 'rageminio'] });
+        let activities = await this.#simva.getActivities({ type: ['gameplay', 'manual', 'limesurvey', 'miniokafka', 'rageminio'] });
 
         logger.info(`Known %d activities, received %d`, state.size, activities.length);
 
-        await this.#garbageCollectActivities(state, activities);
+        let activitiesToGo = await this.#garbageCollectActivities(state, activities);
 
         this.status.total = activities.length;
+        let leastoneUpdated=false;
         for(let idx=0; idx < activities.length; idx++) {
             if (this.shouldExit) {
                 break;
@@ -160,16 +154,19 @@ export class Compactor {
                 logger.info(`New activity: %s`, activity._id);
                 activityState = await state.create(activity._id);
             }
-
             const updated = await this.#updateActivityTraces(activityState);
             if (!updated) continue;
+            
+            leastoneUpdated=updated;
             await this.#distributeTrace(activityState);
 
             if (activities.length % 5) {
                 await state.save();
             }
         }
-        await state.save();
+        if(leastoneUpdated) {
+            await state.save();
+        }
     }
 
     /**
@@ -200,12 +197,16 @@ export class Compactor {
                 } catch(error) {
                     logger.error('Could not remove activity: %s', activityId);
                     logger.error(error);
+                    throw error;
                 }
             }
+            logger.info('Activities to removed OK.');
         }
-
+        logger.info('Starting collecting state garbage.');
         // Garbage collect state files in activities
-        await state.garbageCollect();
+        const activityToPass = await state.garbageCollect();
+        logger.info('Collecting state garbage finished.');
+        return activityToPass;
     }
 
     /**
@@ -214,14 +215,8 @@ export class Compactor {
      * @returns {Promise<boolean>} false if nothing new
      */
     async #updateActivityTraces(activityState) {
-        let traceFiles = (await this.#minio.getTraces(activityState.activityId)).map((o) => o.name);
-        traceFiles.sort();
-        const hash = createSha1();
-        for(const traceFile of traceFiles) {
-            hash.update(traceFile);
-            hash.update('\n');
-        }
-        const sha1 = hash.digest('hex');
+        let traceFiles = (await this.#minio.getTraces(activityState.activityId)).map((o) => o.name).sort();
+        const sha1 = sha1sums(traceFiles);
         if (sha1 === activityState.currentSha1) {
             logger.debug(`Nothing to do for activity %s`, activityState.activityId);
             return false;
@@ -232,15 +227,29 @@ export class Compactor {
         const { added: filesToAdd } = diffArray(activityFiles, traceFiles);
         const nowDate = now();
         const elapsedTime = duration(activityState.lastUpdate, nowDate);
-        if (filesToAdd.length < this.#opts.batchSize && elapsedTime < this.#opts.maxDelay) {
+        let filesToConsume=[];
+        for(let index in filesToAdd) {
+            let file=filesToAdd[index];
+            logger.debug(file);
+            if(activityFiles.includes(file)) {
+                logger.warn("Already consumed: %s", file);
+            } else {
+                filesToConsume.push(file);
+            }
+        }
+        if (filesToConsume.length < this.#opts.batchSize && elapsedTime < this.#opts.maxDelay) {
             const durationStr = formatDuration(elapsedTime);
-            logger.debug(`Update postponed elapsedTime=%s, batchSize=%d for activity %s`, durationStr, filesToAdd.length, activityState.activityId);
+            logger.debug(`Update postponed elapsedTime=%s, batchSize=%d for activity %s`, durationStr, filesToConsume.length, activityState.activityId);
             return false;
         }
 
         logger.info(`Compacting activity %s`, activityState.activityId);
-        await activityState.update(filesToAdd, nowDate, sha1);
-        return true;
+        if(filesToConsume.length > 0) {
+            await activityState.update(filesToConsume, nowDate, sha1);
+            return true;
+        } else {
+            return false;
+        }
     }
 
     /**
@@ -249,11 +258,29 @@ export class Compactor {
      */
     async #distributeTrace(activityState) {
         const localStatePath = activityState.localStatePath;
-        const outputDir = this.#opts.minio.outputs_dir;
-        const tracesFilename = this.#opts.minio.traces_file;
-        const remotePath = `${outputDir}/${activityState.activityId}/${tracesFilename}`;
-        await this.#minio.copyToRemoteFile(localStatePath, remotePath);
+        const remoteStatePath = activityState.remoteStatePath;
+        const remotePath = activityState.remoteOutputPath;
+        try {
+            //const metadata = {
+            //    "Content-Type": "application/json",
+            //    "Version": "1"
+            //};
+            //await this.#minio.copyToRemoteFile(localStatePath, remotePath, metadata);
+            await this.#minio.copyWithinMinIO(remoteStatePath, remotePath);
+            logger.info("Object copied successfully!");
+        } catch (error) {
+            logger.error("Copy compacted file failed:");
+            logger.error(error);
+            throw error;
+        }
         logger.info(`Copied compacted file for activity %s`, activityState.activityId);
+    }
+
+    async processConsistencyAndGarbage() {
+        logger.info('Check consistency');
+        await this.#checkConsistency();
+        logger.info('Start compaction');
+        await this.#compactActivities();
     }
 
     // Method to process messages (acts as the callback for KafkaClient)
@@ -261,141 +288,93 @@ export class Compactor {
      * @param {any} message
      */
     async processMessage(message) {
-        try {
-            // Log the received message
-            logger.info('Received message:');
-            logger.info(message.value);
+        // Log the received message
+        logger.debug('Received message:');
+        logger.debug(message.value);
 
-            let state = await getState(this.#opts, this.#minio);
-            let activities = await this.#simva.getActivities({ type: ['gameplay', 'miniokafka', 'rageminio'] });
-            await this.#garbageCollectActivities(state, activities);
-            // Set up the delimiter and the required bucket and path values
-            let delimiter = '/';
-            let bucket = this.#opts.minio.bucket;
-            
-            // Build the path to traces topic
-            let tracestopicspath = `${this.#opts.minio.topics_dir}${delimiter}${this.#opts.minio.traces_topic}${delimiter}_id=`;
+        let state = await getState(this.#opts, this.#minio);
+        // Set up the delimiter and the required bucket and path values
+        let delimiter = '/';
+        let bucket = this.#opts.minio.bucket;
         
-            // Log the constructed path
-            logger.info(`Trace topic path: ${tracestopicspath}`);
+        // Build the path to traces topic
+        let tracestopicspath = `${this.#opts.minio.topics_dir}${delimiter}${this.#opts.minio.traces_topic}${delimiter}_id=`;
+    
+        // Log the constructed path
+        logger.debug(`Trace topic path: ${tracestopicspath}`);
+    
+        // Parse the message value (assuming it's a JSON string)
+        let ev = JSON.parse(message.value);
+        let key = ev.Key;
         
-            // Parse the message value (assuming it's a JSON string)
-            let ev = JSON.parse(message.value);
-            let key = ev.Key;
-            
-            // Log the key extracted from the message
-            logger.info(`Received Key: ${key}`);
+        // Log the key extracted from the message
+        logger.debug(`Received Key: ${key}`);
+    
+        // Remove the bucket and trace topic path from the key to get the key value
+        let keyvalue = key.replace(`${bucket}${delimiter}${tracestopicspath}`, "");
         
-            // Remove the bucket and trace topic path from the key to get the key value
-            let keyvalue = key.replace(`${bucket}${delimiter}${tracestopicspath}`, "");
-            
-            // Log the key value after removal
-            logger.info(`Key value without bucket and path: ${keyvalue}`);
+        // Log the key value after removal
+        logger.debug(`Key value without bucket and path: ${keyvalue}`);
+    
+        // Split the key value to extract activityId and filename
+        let added = keyvalue.split(delimiter);
         
-            // Split the key value to extract activityId and filename
-            let added = keyvalue.split(delimiter);
-            
-            // Initialize variables for activityId and filename
-            let activityId = null;
-            let filename = null;
-            let keyWithoutBucket = null;
-        
-            // If the split key has exactly 2 parts, extract activityId and filename
-            if (added.length === 2) {
-                activityId = added[0];
-                filename = added[1];
-                keyWithoutBucket = `${tracestopicspath}${activityId}${delimiter}${filename}`;
-
-                // Log the extracted values
-                logger.info(`activityId: ${activityId}, filename: ${filename}, key: ${key}, keyWithoutBucket: ${keyWithoutBucket}`);
-                
-                // ActivityState
-                let activityState = state.get(activityId);
-                if (activityState === undefined) {
-                    logger.info(`New activity: %s`, activityId);
-                    activityState = await state.create(activityId);
-                }
-                logger.info(activityState);
-                // compute which files need to be appended
-                const activityFiles = (await activityState.files()).sort();
-                logger.info(activityFiles);
-                
-                if(activityFiles.includes(keyWithoutBucket)) {
-                    logger.warn("Already consumed.")
-                } else {
-                    try {
-                        let positionvalue=-binarySearch(activityFiles, keyWithoutBucket, true, (a,b)=> { 
-                            if(typeof a == "string" && typeof b == "string" ) {
-                                return a.localeCompare(b); 
-                            } else {
-                                return -1;
-                            }
-                        })-1;
-                        var nextposition=activityFiles.length;
-                        logger.info(keyWithoutBucket);
-                        logger.info("positionvalue:");
-                        logger.info(positionvalue);
-                        logger.info("nextposition:");
-                        logger.info(nextposition);
-                        if(positionvalue < nextposition) {
-                            logger.warn("Not ordered. Should have been consumed before.")
-                        }
-                        await this.#updateActivityTracesFromPath(activityState, keyWithoutBucket);
-                        logger.info(activityState);
-                        await this.#distributeTrace(activityState);
-                        logger.info(activityState);
-                        await state.save();
-                    } catch(e) {
-                        logger.info(e);
-                    }
-                }
-            } else {
-                logger.warn('Key format is unexpected. Unable to extract activityId and filename.');
-            }
-        } catch(e) {
-            logger.debug('Error processing message:');
-            logger.debug(e);
+        // Initialize variables for activityId and filename
+        let activityId = null;
+        let filename = null;
+        let keyWithoutBucket = null;
+    
+        // If the split key has exactly 2 parts, extract activityId and filename
+        if (added.length !== 2) {
+            throw new Error('Key format is unexpected. Unable to extract activityId and filename.');
         }
+        activityId = added[0];
+        filename = added[1];
+        keyWithoutBucket = `${tracestopicspath}${activityId}${delimiter}${filename}`;
+
+        // Log the extracted values
+        logger.debug(`activityId: ${activityId}, filename: ${filename}, key: ${key}, keyWithoutBucket: ${keyWithoutBucket}`);
+        
+        // ActivityState
+        let activityState = state.get(activityId);
+        if (activityState === undefined) {
+            logger.debug(`New activity: %s`, activityId);
+            activityState = await state.create(activityId);
+        }
+        logger.debug(activityState);
+        // compute which files need to be appended
+        const activityFiles = (await activityState.files());
+        logger.debug(activityFiles);
+        
+        if(activityFiles.includes(keyWithoutBucket)) {
+            logger.warn("Already consumed: %s", keyWithoutBucket);
+            return;
+        }
+        const newActivityFiles= await activityState.insertOrdered([keyWithoutBucket]);
+        const sha1 = sha1sums(newActivityFiles);
+        await this.#updateActivityTracesFromPath(activityState, keyWithoutBucket, sha1);
+        logger.debug(activityState);
+
+        await this.#distributeTrace(activityState);
+        logger.debug(activityState);
+
+        await state.save();
     }
      
     /**
      * Update Activity Traces From Path
      * @param {ActivityCompactionState} activityState 
      * @param {string} keyPath
+     * @param {string} sha1
      * @returns {Promise<boolean>} false if nothing new
      */
-    async #updateActivityTracesFromPath(activityState, keyPath) {
-        const hash = createSha1();
-        hash.update(keyPath);
-        hash.update('\n');
-        const sha1 = hash.digest('hex');
+    async #updateActivityTracesFromPath(activityState, keyPath, sha1) {
         const nowDate = now();
         const filesToAdd = [keyPath];
         logger.info(`Compacting activity %s`, activityState.activityId);
-        logger.info(filesToAdd);
+        logger.debug(filesToAdd);
         await activityState.update(filesToAdd, nowDate, sha1);
         return true;
-    }
-
-    // Method to start consuming messages using KafkaClient
-    async startKafkaConsumer() {
-        try {
-            logger.info('Compactor starting Kafka consumption...');
-            // Start Kafka consumption and pass the processMessage as a callback
-            await this.#kafka.consumeLatestMessages(this.processMessage.bind(this));
-        } catch (error) {
-            console.error('Error starting Compactor:', error);
-        }
-    }
-
-    // Method to stop consuming messages
-    async stopKafkaConsumer() {
-        try {
-            await this.#kafka.disconnect();
-            logger.info('Compactor stopped Kafka consumption.');
-        } catch (error) {
-            console.error('Error stopping Compactor:', error);
-        }
     }
     
     /**
@@ -413,13 +392,4 @@ export class Compactor {
     getOpts() {
         return this.#opts;
     }
-}
-
-/**
- * Create sha1 hash function.
- *
- * @returns 
- */
-function createSha1() {
-	return createHash('sha1');
 }

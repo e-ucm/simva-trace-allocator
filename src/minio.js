@@ -32,6 +32,18 @@ import { logger } from './logger.js';
  * @property {string} versionId versionId of the object.
  */
 
+/**
+ * @typedef MultipartUploadResult
+ * @property {string} uploadId uploadId of the object.
+ * @property {string} key key path of the object.
+ */
+
+/**
+ * @typedef MetadataObject
+ * @property {string} Version 
+ * @property {string} Content-Type
+ */
+
 export class MinioClient {
 
     /**
@@ -70,6 +82,13 @@ export class MinioClient {
     }
 
     /**
+     * @param {string} filePath
+     */
+    async getMetadataObject(filePath) {
+        return this.#minio.statObject(this.#opts.bucket, filePath);
+    }
+
+    /**
      * 
      * @param {string} file 
      * @returns {Promise<string>}
@@ -97,10 +116,12 @@ export class MinioClient {
      * 
      * @param {string} remotePath 
      * @param {string} localPath
-     * @returns {Promise<void>}
+     * @param {MetadataObject} [metadata]
+     * @returns {Promise<FPutResult>}
      */
-	async copyToRemoteFile(localPath, remotePath) {
-        return this.#minio.fPutObject(this.#opts.bucket, remotePath, localPath);
+	async copyToRemoteFile(localPath, remotePath, metadata) {
+        logger.debug(`Coping file ${localPath} to remote ${remotePath}`);
+        return this.#minio.fPutObject(this.#opts.bucket, remotePath, localPath, metadata);
 	}
 
     /**
@@ -128,6 +149,7 @@ export class MinioClient {
      * @returns {Promise<void>}
      */
 	async removeRemoteFile(path) {
+        logger.debug(`removeRemoteFile file ${path}`);
         return this.#minio.removeObject(this.#opts.bucket, path);
 	}
 
@@ -152,6 +174,21 @@ export class MinioClient {
         return ! nextValue.done;
     }
 
+    
+    /**
+     * 
+     * @param {string} sourcePath 
+     * @param {string} destinationPath 
+     * @returns {Promise<void>}
+     */
+    async copyWithinMinIO(sourcePath, destinationPath) {
+        logger.debug(`Coping file into remote from ${sourcePath} to ${destinationPath}`);
+        this.#minio.copyObject(
+            this.#opts.bucket,
+            destinationPath,
+            `/${this.#opts.bucket}/${sourcePath}`
+          );
+    }
 }
 
 function streamToString(stream) {
