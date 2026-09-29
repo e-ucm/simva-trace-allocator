@@ -49,6 +49,12 @@ export const config = {
         port: process.env.SIMVA_PORT !== undefined ? parseInt(process.env.SIMVA_PORT) : undefined,
         username: process.env.SIMVA_USER || 'admin',
         password: process.env.SIMVA_PASSWORD || 'password',
+        ssoHost: process.env.SIMVA_SSO_HOST || 'sso.simva.example.org',
+        ssoProtocol: process.env.SIMVA_SSO_PROTOCOL || 'https',
+        ssoPort: process.env.SIMVA_SSO_PORT !== undefined ? parseInt(process.env.SIMVA_SSO_PORT) : undefined,
+        ssoRealm: process.env.SIMVA_SSO_REALM || 'simva',
+        clientId: process.env.SIMVA_CLIENT_ID || 'simva-trace-allocator',
+        clientSecret: process.env.SIMVA_CLIENT_SECRET || 'secret',
     },
     kafka: {
         clientId: process.env.SIMVA_KAFKA_CLIENTID || 'my-client-id',
