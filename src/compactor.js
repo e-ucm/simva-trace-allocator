@@ -299,6 +299,10 @@ export class Compactor {
         
         // Build the path to traces topic
         let tracestopicspath = `${this.#opts.minio.topics_dir}${delimiter}${this.#opts.minio.traces_topic}${delimiter}_id=`;
+        if(message.key === undefined || !message.key.startsWith(tracestopicspath)) {
+            logger.warn('Message key does not start with the expected path. Ignoring message.');
+            return;
+        }
     
         // Log the constructed path
         logger.debug(`Trace topic path: ${tracestopicspath}`);
