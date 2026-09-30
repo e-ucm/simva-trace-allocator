@@ -58,6 +58,42 @@ const FORM_URL_ENCODED_MIME_TYPE = 'application/x-www-form-urlencoded';
  */
 const TOKEN_EXPIRY_SKEW_MS = 60 * 1000;
 
+/**
+ * The Keycloak stack generates the client id/secret of this service and the
+ * password of the garbage collector user, so both have to be exported from
+ * docker-stacks/config/keycloak/simva-env.sh before starting the service.
+ */
+const GENERATED_CREDENTIALS_HINT = 'The Keycloak stack generates these credentials into docker-stacks/config/keycloak/simva-env.sh, source it before starting the service';
+
+/**
+ * Returns the OAuth2 error reported by the token endpoint, if any.
+ *
+ * @param {any} err - The error thrown by the token endpoint
+ * @returns {string | undefined}
+ */
+function oauthError(err) {
+	return typeof err?.json?.error === 'string' ? err.json.error : undefined;
+}
+
+/**
+ * Explains the most common token endpoint failures, which are almost always a
+ * deployment issue (credentials that were never exported) rather than a bug.
+ *
+ * @param {any} err - The error thrown by the token endpoint
+ * @param {SimvaOpts} opts - Options in use, to name the rejected credentials
+ * @returns {any} The error to throw
+ */
+function explainTokenError(err, opts) {
+	const error = oauthError(err);
+	if (error === 'invalid_client') {
+		return new Error(`Keycloak rejected the client credentials of this service (client_id '${opts.clientId}'): check SIMVA_CLIENT_ID / SIMVA_CLIENT_SECRET. ${GENERATED_CREDENTIALS_HINT}.`, { cause: err });
+	}
+	if (error === 'invalid_grant') {
+		return new Error(`Keycloak rejected the resource owner credentials (user '${opts.username}'): check SIMVA_USER / SIMVA_PASSWORD. ${GENERATED_CREDENTIALS_HINT}.`, { cause: err });
+	}
+	return err;
+}
+
 export class SimvaClient {
     /**
      * @param {SimvaOpts} opts
@@ -117,7 +153,12 @@ export class SimvaClient {
 			scope: 'openid'
 		});
 		/** @type {TokenResponse} */
-		const result = await this.#tokenApi.post(form.toString()).json();
+		let result;
+		try {
+			result = await this.#tokenApi.post(form.toString()).json();
+		} catch (err) {
+			throw explainTokenError(err, this.#opts);
+		}
 		this.#storeToken(result);
 		return this.#authorization();
 	}
@@ -147,6 +188,10 @@ export class SimvaClient {
 			}
 			this.#storeToken(result);
 		} catch (e) {
+			// Rejected credentials are not a problem of the refresh token, no retry helps
+			if (oauthError(e) !== undefined) {
+				throw explainTokenError(e, this.#opts);
+			}
 			// A rejected refresh token cannot be recovered from, ask for a new one
 			this.#accessToken = undefined;
 			this.#refreshToken = undefined;

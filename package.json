@@ -17,7 +17,8 @@
   },
   "dependencies": {
     "dotenv": "^16.3.1",
-    "minio": "8.0.4",
+    "@aws-sdk/client-s3": "^3.1142.0",
+    "@aws-sdk/s3-request-presigner": "^3.1142.0",
     "kafkajs":"^2.2.4",
     "pino": "^9.6.0",
     "tinyduration": "^3.3.0",

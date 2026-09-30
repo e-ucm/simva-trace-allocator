@@ -19,6 +19,18 @@ import ms from "ms";
  * @property {import('./kafka.js').KafkaOpts} kafka
  */
 
+const rustfs_enabled = process.env.RUSTFS_ENABLED !== 'false';
+const rustfs_api_url = process.env.RUSTFS_API_URL || 'rustfs-api.external.test';
+const rustfs_ssl = process.env.RUSTFS_SSL !== 'false';
+const rustfs_port = parseInt(`${process.env.RUSTFS_PORT}`) || 443;
+const rustfs_access_key = process.env.RUSTFS_ACCESS_KEY || 'rustfs';
+const rustfs_secret_key = process.env.RUSTFS_SECRET_KEY || 'secret';
+const minio_apiUrl = process.env.MINIO_API_URL || 'minio-api.external.test';
+const minio_ssl = process.env.MINIO_SSL !== 'false';
+const minio_port = parseInt(`${process.env.MINIO_PORT}`) || 443;
+const minio_accessKey = process.env.MINIO_ACCESS_KEY || 'minio';
+const minio_secretKey = process.env.MINIO_SECRET_KEY || 'secret';
+
 /** @type {CompactorOptions} */
 export const config = {
     concatEventPolicy: process.env.CONCAT_EVENT_POLICY !== undefined ? (process.env.CONCAT_EVENT_POLICY.toLocaleLowerCase() === 'false' ? false : true) : true, // if true minio-events else previous version of trace allocator
@@ -32,11 +44,15 @@ export const config = {
     copyInsteadRename: process.env.COPY_INSTEAD_RENAME !== undefined ? (process.env.COPY_INSTEAD_RENAME.toLocaleLowerCase() === 'false' ? false : true) : true,
     tryRecovery: process.env.TRY_RECOVERY !== undefined ? (process.env.TRY_RECOVERY.toLocaleLowerCase() === 'false' ? false : true) : false,
     minio: {
-        host: process.env.MINIO_HOST || 'minio.simva.example.org',
-        useSSL: process.env.MINIO_SSL !== undefined ? (process.env.MINIO_SSL.toLocaleLowerCase() === 'false' ? false : true) : false,
-        port: process.env.MINIO_PORT !== undefined ? parseInt(process.env.MINIO_PORT) : undefined,
-        accessKey: process.env.MINIO_ACCESS_KEY || 'admin',
-        secretKey: process.env.MINIO_SECRET_KEY || 'ChanGeMe',
+        // Internal (in network) endpoint used by the server to talk to the object storage service.
+        // Inside the container network the external hostnames do not resolve, so the service is
+        // reached through its internal service name (i.e. rustfs.internal.test).
+        host: rustfs_enabled ? rustfs_api_url : minio_apiUrl,
+        useSSL: rustfs_enabled ? rustfs_ssl : minio_ssl,
+        port: rustfs_enabled ? rustfs_port : minio_port,
+        region: process.env.RUSTFS_REGION || process.env.AWS_REGION || 'us-east-1',
+        accessKey: rustfs_enabled ? rustfs_access_key : minio_accessKey,
+        secretKey: rustfs_enabled ? rustfs_secret_key : minio_secretKey,
         bucket: process.env.MINIO_BUCKET || 'traces',
         topics_dir: process.env.MINIO_TOPICS_DIR || 'kafka-topics',
         traces_topic: process.env.MINIO_TRACES_TOPIC || 'traces',
