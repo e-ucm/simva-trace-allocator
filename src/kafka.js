@@ -28,11 +28,12 @@ export class KafkaClient {
             logger.info(`Subscribed to topic: ${this.topic}`);
         } catch (error) {
             console.error('Error connecting to Kafka:', error);
+            throw error;
         }
     }
 
     // Run the consumer and process messages
-    async consumeLatestMessages(onMessage) {
+    async startKafkaConsumer(onMessage) {
         try {
             await this.connect();
 
@@ -59,7 +60,8 @@ export class KafkaClient {
                 }
             });
         } catch (error) {
-            console.error('Error consuming messages:', error);
+            console.error('Error starting Kafka messages consumer :', error);
+            throw error;
         }
     }
 
@@ -70,6 +72,7 @@ export class KafkaClient {
             logger.info('Kafka consumer disconnected');
         } catch (error) {
             console.error('Error disconnecting from Kafka:', error);
+            throw error;
         }
     }
 }
