@@ -32,7 +32,7 @@ export function sha1sums(strings) {
     }
 
     const hash = createSha1();
-    for(const s of strings) {
+    for(const s of str) {
         hash.update(s);
         hash.update('\n');
     }

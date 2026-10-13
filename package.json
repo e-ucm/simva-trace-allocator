@@ -1,6 +1,6 @@
 {
   "name": "trace-allocator",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +10,9 @@
     "dev:clinic:doctor": "clinic doctor $CLINIC_ARGS -- node ./src/index.js $NODE_ARGS",
     "dev:clinic:bubbleprof": "clinic bubbleprof $CLINIC_ARGS -- node ./src/index.js $NODE_ARGS",
     "dev:clinic:flame": "clinic flame $CLINIC_ARGS -- node ./src/index.js $NODE_ARGS",
-    "dev:clinic:heapprofiler": "clinic heapprofiler $CLINIC_ARGS -- node ./src/index.js $NODE_ARGS"
+    "dev:clinic:heapprofiler": "clinic heapprofiler $CLINIC_ARGS -- node ./src/index.js $NODE_ARGS",
+    "test": "node --test __tests__",
+    "test:watch": "node --test --watch __tests__"
   },
   "engines": {
     "node": ">=20 <24"
