@@ -11,8 +11,8 @@
     "dev:clinic:bubbleprof": "clinic bubbleprof $CLINIC_ARGS -- node ./src/index.js $NODE_ARGS",
     "dev:clinic:flame": "clinic flame $CLINIC_ARGS -- node ./src/index.js $NODE_ARGS",
     "dev:clinic:heapprofiler": "clinic heapprofiler $CLINIC_ARGS -- node ./src/index.js $NODE_ARGS",
-    "test": "node --test __tests__",
-    "test:watch": "node --test --watch __tests__"
+    "test": "node --test",
+    "test:watch": "node --test --watch"
   },
   "engines": {
     "node": ">=20 <24"
