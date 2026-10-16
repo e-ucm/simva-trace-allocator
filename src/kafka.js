@@ -17,7 +17,11 @@ export class KafkaClient {
         this.topic = topic;
         this.kafka = new Kafka({ logLevel: logLevel.INFO, clientId: this.clientId, brokers: this.brokers });
         this.consumer = this.kafka.consumer({ groupId: this.groupId });
+        this.connected = false;
     }
+
+    /** @type {boolean} */
+    connected;
 
     // Connect and subscribe to a topic
     async connect() {
@@ -25,6 +29,7 @@ export class KafkaClient {
             logger.info(`Connecting to Kafka brokers: ${this.brokers}`);
             await this.consumer.connect();
             await this.consumer.subscribe({ topic: this.topic, fromBeginning: false });
+            this.connected = true;
             logger.info(`Subscribed to topic: ${this.topic}`);
         } catch (error) {
             console.error('Error connecting to Kafka:', error);
@@ -69,6 +74,7 @@ export class KafkaClient {
     async disconnect() {
         try {
             await this.consumer.disconnect();
+            this.connected = false;
             logger.info('Kafka consumer disconnected');
         } catch (error) {
             console.error('Error disconnecting from Kafka:', error);

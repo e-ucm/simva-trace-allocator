@@ -25,6 +25,8 @@ services:
       #The stack issues its certificates from the local development CA, which is not
       #part of the Node.js trust store
       NODE_EXTRA_CA_CERTS: "/var/lib/simva/tls/ca/rootCA.pem"
+      #HEALTH (the service exposes GET /health on this port, used by the Docker HEALTHCHECK)
+      HEALTH_PORT: 3050
       #TRACE ALLOCATOR
       CONCAT_EVENT_POLICY: true
       BATCH_SIZE: 100

@@ -14,6 +14,7 @@ import ms from "ms";
  * @property {number} gcInterval
  * @property {boolean} copyInsteadRename
  * @property {boolean} tryRecovery
+ * @property {{port: number, host: string}} health
  * @property {import('./minio.js').MinioOpts} minio
  * @property {import('./simva.js').SimvaOpts} simva
  * @property {import('./kafka.js').KafkaOpts} kafka
@@ -77,6 +78,10 @@ export const config = {
         brokers: process.env.SIMVA_KAFKA_BROKER !== undefined ?  [ process.env.SIMVA_KAFKA_BROKER ] : ['localhost:9092'],
         groupId: process.env.SIMVA_KAFKA_GROUPID || 'my-group-id',
         topic: process.env.SIMVA_KAFKA_MINIO_TOPIC || 'minio-events'
+    },
+    health: {
+        port: process.env.HEALTH_PORT !== undefined ? parseInt(process.env.HEALTH_PORT) : 3050,
+        host: process.env.HEALTH_HOST || '0.0.0.0'
     }
 };
 

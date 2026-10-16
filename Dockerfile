@@ -24,6 +24,10 @@ EXPOSE 3050
 # Default CMD, can be overridden by docker-compose
 CMD [ "npm", "run", "dev" ]
 
+# Liveness probe served by the service itself (GET /health)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD ["node", "-e", "fetch(`http://127.0.0.1:${process.env.HEALTH_PORT||3050}/health`).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+
 FROM node:22-alpine AS prod
 
 WORKDIR /app
@@ -40,3 +44,7 @@ USER node
 EXPOSE 3050
 
 CMD [ "npm", "start" ]
+
+# Liveness probe served by the service itself (GET /health)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD ["node", "-e", "fetch(`http://127.0.0.1:${process.env.HEALTH_PORT||3050}/health`).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

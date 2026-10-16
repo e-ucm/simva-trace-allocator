@@ -4,6 +4,7 @@ import cron from 'node-cron';
 import { Compactor } from './compactor.js';
 import { convertTimeToCron } from "./utils/date.js";
 import { KafkaClient } from './kafka.js';
+import { createHealthServer } from './health.js';
 import "./profiling.js";
 import ms from 'ms';
 logger.debug('Current config: %o', config);
@@ -12,9 +13,28 @@ const compactor = new Compactor(config);
 const run = compactor.compact.bind(compactor);
 
 let intervalId;
+let kafka;
+
+// Health endpoint: liveness probe for docker HEALTHCHECK / external monitors.
+const healthServer = createHealthServer({
+    compactor,
+    get kafka() { return kafka; }
+});
+healthServer.on('error', (err) => {
+    logger.error('Health server could not listen on %s:%d: %o', config.health.host, config.health.port, err);
+});
+healthServer.listen(config.health.port, config.health.host, () => {
+    logger.info('Health endpoint listening on http://%s:%d/health', config.health.host, config.health.port);
+});
+const stopHealthServer = () => {
+    healthServer.closeAllConnections?.();
+    healthServer.close();
+};
+process.once('SIGTERM', stopHealthServer);
+process.once('SIGINT', stopHealthServer);
 
 if (config.concatEventPolicy) {
-    const kafka = new KafkaClient(config.kafka);
+    kafka = new KafkaClient(config.kafka);
     await startKafkaProcess();
     async function startKafkaProcess() {
         // Schedule a task to run every x
