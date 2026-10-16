@@ -18,9 +18,8 @@ export function diffArray(a, b) {
 		added: [],
 		removed: []
 	};
-	const minLength = Math.min(a.length, b.length);
 	let idxA, idxB;
-	for(idxA = 0, idxB=0; idxA < minLength;) {
+	for(idxA = 0, idxB=0; idxA < a.length && idxB < b.length;) {
 		const aValue = a[idxA];
 		const bValue = b[idxB];
 		if (aValue === bValue) {
