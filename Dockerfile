@@ -1,12 +1,12 @@
 # ---------------------------------------
 # Base
 # ---------------------------------------
-FROM timbru31/node-alpine-git:22 AS base
+FROM node:26.12.1-alpine AS base
 
 WORKDIR /app
 
 # Common dependencies
-RUN apk add --no-cache curl ca-certificates bash
+RUN apk add --no-cache curl ca-certificates bash git
 
 FROM base AS deps
 
@@ -28,7 +28,7 @@ CMD [ "npm", "run", "dev" ]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD ["node", "-e", "fetch(`http://127.0.0.1:${process.env.HEALTH_PORT||3050}/health`).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 
-FROM node:22-alpine AS prod
+FROM base AS prod
 
 WORKDIR /app
 
