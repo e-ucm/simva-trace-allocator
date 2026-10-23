@@ -9,21 +9,22 @@
 #
 set -euo pipefail
 
-IMAGE="simva-trace-allocator:ci"
+TARGET="${TARGET:-prod}"
+IMAGE="simva-trace-allocator:ci-${TARGET}"
 CONTAINER="ci-simva-trace-allocator"
 
 cache_args=()
 if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
   cache_args=(
-    --cache-from "type=gha,scope=simva-trace-allocator"
-    --cache-to "type=gha,mode=max,scope=simva-trace-allocator"
+    --cache-from "type=gha,scope=simva-trace-allocator-${TARGET}"
+    --cache-to "type=gha,mode=max,scope=simva-trace-allocator-${TARGET}"
   )
 fi
 
 echo "::group::Building simva-trace-allocator"
 docker buildx build \
   --load \
-  --target prod \
+  --target "${TARGET}" \
   --tag "${IMAGE}" \
   "${cache_args[@]}" \
   .
@@ -58,10 +59,20 @@ trap cleanup EXIT
 
 # The trace allocator is a Kafka worker: its health endpoint is the way to tell
 # that it started correctly (no other port is published by the service).
+# prod runs the compiled/served app directly. dev runs the image's own CMD
+# (`npm run dev`) with the checked-out repo mounted over /app, keeping the
+# image's node_modules through an anonymous volume, as docker-compose does.
+run_args=()
+cmd=(node src/index.js)
+if [[ "${TARGET}" == "dev" ]]; then
+  run_args=(-v "$(pwd):/app" -v /app/node_modules)
+  cmd=()
+fi
+
 docker rm -f "${CONTAINER}" >/dev/null 2>&1 || true
 docker run -d --name "${CONTAINER}" \
   -e LOG_FOLDER=/tmp \
-  "${IMAGE}" node src/index.js >/dev/null
+  "${run_args[@]}" "${IMAGE}" "${cmd[@]}" >/dev/null
 
 seconds=25
 answered=false
