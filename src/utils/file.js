@@ -249,7 +249,7 @@ export function withFile(path, flags, mode) {
  */
 export async function copyNoOverwrite(source, dest) {
     try {
-        return copyFile(source, dest, constants.COPYFILE_EXCL);
+        return await copyFile(source, dest, constants.COPYFILE_EXCL);
     } catch (error) {
         throw wrapError(error, `Could not copy file '${source}' to '${dest}'`);
     }

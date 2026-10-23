@@ -45,6 +45,22 @@ export function isErrorWithCode(error){
 }
 
 /**
+ * Error thrown when a requested object (or any other resource) does not exist.
+ * 
+ * @example
+ * throw new NotFoundError(`file ${file} not found`);
+ */
+export class NotFoundError extends Error {
+    /**
+     * @param {string} message - The error message describing what was not found
+     */
+    constructor(message) {
+        super(message);
+        this.name = 'NotFoundError';
+    }
+}
+
+/**
  * Builds a new error object, linking it to the original error via the `cause`
  * property if it is an Error.
  *
